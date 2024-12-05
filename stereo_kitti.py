@@ -34,6 +34,8 @@ def main(pathToVocabulary, pathToSettings, pathToSequence):
     nImages = len(leftImages)
 
     # Create SLAM system. It initializes all system threads and gets ready to process frames.
+    ORB_SLAM2 = SLAM(pathToVocabulary, pathToSettings, ORB_SLAM2::System::STEREO, True)
+
     #ORB_SLAM2::System SLAM(argv[1],argv[2],ORB_SLAM2::System::STEREO,true)
     print(nImages)
     return 0
