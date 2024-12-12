@@ -5,15 +5,29 @@ from ORBMatcher import ORBMatcher
 
 
 class Frame:
-    def __init__(self, mleft, mright, timestamp, mpORBextractorLeft, mpORBextractorRight,  keypointsL, keypointsR,
-                   mpVocabulary, mK, mDistCoef, mbf, mThDepth, nNextId, mbInitialComputations):
+    def __init__(self, mleft, mright, timestamp, mpORBextractorLeft, mpORBextractorRight,
+                   mpVocabulary, mK, mDistCoef, mbf, mThDepth, frame_args, nNextId):
 
-        self.FRAME_GRID_ROWS = 48
-        self.FRAME_GRID_COLS = 64
+        # self.args = args
+        self.fx = frame_args[0]
+        self.fy = frame_args[1]
+        self.cx = frame_args[2]
+        self.cy = frame_args[3]
+        self.invfx = frame_args[4]
+        self.invfy = frame_args[5]
+        self.mfGridElementWidthInv = frame_args[6]
+        self.mfGridElementHeightInv = frame_args[7]
+        self.mnMinX = frame_args[8]
+        self.mnMaxX = frame_args[9]
+        self.mnMinY = frame_args[10]
+        self.mnMaxY = frame_args[11]
+        self.FRAME_GRID_ROWS = frame_args[12]
+        self.FRAME_GRID_COLS = frame_args[13]
+        #
 
         self.mbf = mbf
         self.mK =mk
-        self. mDistCoef = mDistCoef
+        self.mDistCoef = mDistCoef
         self.mleft = mleft
         self.mright = mright
         self.timestamp = timestamp
@@ -34,8 +48,6 @@ class Frame:
         self.mvInvLevelSigma2 = mpORBextractorLeft.mvInvLevelSigma2
 
         self.mb = self.mbf / self.mK[0][0]
-        #This is done only for the first Frame (or after a change in the calibration)
-        self.mbInitialComputations = mbInitialComputations
 
         #if mTcw is not None:
 	        #    self.set_pose(mTcw)
@@ -44,14 +56,38 @@ class Frame:
         mvKeysRight, self.mDescriptorsRight = self.mpORBextractorRight.operator(mright)
         self.N = len(mvKeysLeft)
 
-        #mvKeysLeft = keypointsL
-        #mvKeysRight = keypointsR
-
-        self.newKeyLeft = self.undistort_keypoints(mvKeysLeft, mK, mDistCoef)
-        self.newKeyRight = self.undistort_keypoints(mvKeysRight, mK, mDistCoef)
+        self.newKeyLeft = self.undistort_keypoints(mvKeysLeft)
+        self.newKeyRight = self.undistort_keypoints(mvKeysRight)
 
         self.ORBM = ORBMatcher()
         self.compute_stereo_matches()
+
+        self.mvpMapPoints = []
+        self.mvbOutlier = []
+
+        self.assign_features_to_grid()
+
+    def PosInGrid(self, kp):
+
+        posX = round((kp.pt[0] - self.mnMinX) * self.mfGridElementWidthInv)
+        posY = round((kp.pt[1] - self.mnMinY) * self.mfGridElementHeightInv)
+
+        # Ensure the keypoint is within the grid bounds
+        if posX < 0 or posX >= self.FRAME_GRID_COLS or posY < 0 or posY >= self.FRAME_GRID_ROWS:
+            return False, None, None
+
+        return True, posX, posY
+
+    def assign_features_to_grid(self):
+
+        mGrid = []
+        mg = np.zeros((self.FRAME_GRID_COLS, self.FRAME_GRID_ROWS), dtype=np.float32)
+        for i in range(self.N):
+            kp = self.newKeyLeft[i]
+            bflag, nGridPosX, nGridPosY = self.PosInGrid(kp)
+
+            if bflag:
+                mGrid.append(mg[nGridPosX][nGridPosY])
 
     def compute_stereo_matches(self):
 
@@ -178,11 +214,10 @@ class Frame:
                     mvuRight[iL] = bestuR
                     vDistIdx.append((bestDist, iL))
 
-    def undistort_keypoints(self, mvKeys, mK, mDistCoef):
+    def undistort_keypoints(self, mvKeys):
 
-        if np.sum(mDistCoef) == 0:
-            print("No distortion")
-            return mvKeys
+        if self.mDistCoef[0][0] == 0:
+           return mvKeys
 
         N = len(mvKeys)
         mat = np.zeros((N, 2), dtype=np.float32)
@@ -191,7 +226,7 @@ class Frame:
             mat[i, 1] = kp.pt[1]
 
         mat = mat.reshape(-1, 1, 2)
-        undistorted = cv2.undistortPoints(mat, mK, mDistCoef, None, None, mK)
+        undistorted = cv2.undistortPoints(mat, self.mK, self.mDistCoef, None, None, self.mK)
         undistorted = undistorted.reshape(-1, 2)
 
         mvKeysUn = []
@@ -219,6 +254,35 @@ class Frame:
         self.mtcw = self.mTcw[:3, 3]
         self.mOw = -np.dot(self.mRwc, self.mtcw)
 
+
+def compute_image_bounds(imLeft, mK, mDistCoef):
+
+    if mDistCoef[0][0] != 0.0:
+        mat = np.zeros((4, 2), dtype=np.float32)
+        mat[0, 0] = 0.0
+        mat[0, 1] = 0.0
+        mat[1, 0] = imLeft.shape[1]
+        mat[1, 1] = 0.0
+        mat[2, 0] = 0.0
+        mat[2, 1] = imLeft.shape[0]
+        mat[3, 0] = imLeft.shape[1]
+        mat[3, 1] = imLeft.shape[0]
+
+        mat = mat.reshape(-1, 1, 2)
+        mat = cv2.undistortPoints(mat, mK, mDistCoef, None, mK)
+        mat = mat.reshape(-1, 2)
+
+        mnMinX = min(mat[0, 0], mat[2, 0])
+        mnMaxX = max(mat[1, 0], mat[3, 0])
+        mnMinY = min(mat[0, 1], mat[1, 1])
+        mnMaxY = max(mat[2, 1], mat[3, 1])
+    else:
+        mnMinX = 0.0
+        mnMaxX = imLeft.shape[1]
+        mnMinY = 0.0
+        mnMaxY = imLeft.shape[0]
+
+    return mnMinX, mnMaxX, mnMinY, mnMaxY
 
 if __name__ == "__main__":
 
@@ -291,7 +355,20 @@ if __name__ == "__main__":
     keypointsR.append(cv2.KeyPoint(x=200.0, y=440.0, size=17.0, angle=-11.0, response=0.6, octave=3, class_id=2))
 
 
-    mFrame = Frame(mleft, mright, timestamp, mORBExtractorLeft, mORBExtractorRight, keypointsL, keypointsR, vocabulary, mk, mDistCoef, mbf, mThDepth,  nNextId=0, mbInitialComputations=True)
-    #mFrame = Frame(mleft, mright, timestamp, mORBExtractorLeft, mORBExtractorRight, vocabulary, mk, mDistCoef, mbf, mThDepth,  nNextId=0, mbInitialComputations=True)
+    mnMinX, mnMaxX, mnMinY, mnMaxY = compute_image_bounds(mleft, mk, mDistCoef)
+
+    FRAME_GRID_ROWS = 48
+    FRAME_GRID_COLS = 64
+
+    mfGridElementWidthInv = float(FRAME_GRID_COLS) / (mnMaxX - mnMinX)
+    mfGridElementHeightInv = float(FRAME_GRID_ROWS) / (mnMaxY - mnMinY)
+
+    invfx = 1.0 / fx
+    invfy = 1.0 / fy
+
+    # should be added to args
+    frame_args = [fx, fy, cx, cy, invfx, invfy, mfGridElementWidthInv, mfGridElementHeightInv, mnMinX, mnMaxX, mnMinY, mnMaxY, FRAME_GRID_ROWS, FRAME_GRID_COLS]
+
+    mFrame = Frame(mleft, mright, timestamp, mORBExtractorLeft, mORBExtractorRight, vocabulary, mk, mDistCoef, mbf, mThDepth, frame_args, nNextId=0)
 
 
