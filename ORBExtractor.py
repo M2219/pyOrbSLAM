@@ -136,25 +136,38 @@ class ORBExtractor:
         image_pyramid = self.compute_pyramid(image)
 
         all_keypoints = self.compute_keypoints_octree(image_pyramid)
-        descriptors = []
-        keypoints = []
+
+        nkeypoints = sum(len(keypoints) for keypoints in all_keypoints)
+        if nkeypoints == 0:
+            print("nkeypoints is None")
+            return
+        else:
+            desc_t = []
+
+        self.descriptors = []
+        self.keypoints = []
         for level, kps in enumerate(all_keypoints):
 
             nkeypointsLevel = len(kps)
             if nkeypointsLevel == 0:
                 continue
 
-            desc = np.zeros((nkeypointsLevel, 32), dtype=np.uint8)
+            #workingMat = image_pyramid[level].copy() #  workingMat = self.mvImagePyramid[level].copy() for optimization
             working_mat = cv2.GaussianBlur(image_pyramid[level], (7, 7), 2, 2, cv2.BORDER_REFLECT_101)
+            desc_computed = self.compute_descriptors(working_mat, kps, self.pattern)
 
-            descriptors.append(self.compute_descriptors(working_mat, kps, self.pattern, desc))
             if level != 0:
                 scale = self.mvScaleFactor[level]
                 for kp in kps:
                     kp.pt = (kp.pt[0] * scale, kp.pt[1] * scale)
 
-            keypoints.append(kps)
-        return keypoints, descriptors
+            self.keypoints.extend(kps)
+            desc_t.append(desc_computed)
+
+        self.descriptors = np.concatenate(desc_t)
+        print(self.descriptors.shape)
+        exit()
+        return self.keypoints, self.descriptors
 
     def compute_pyramid(self, image):
         for level in range(self.nLevels):
@@ -336,11 +349,13 @@ class ORBExtractor:
             keys.append(keypoint)
         return keys
 
-    def compute_descriptors(self, image, keypoints, pattern, descriptors):
-        for i, kp in enumerate(keypoints):
-            descriptors[i, :] = self.compute_orb_descriptor(kp, image, pattern)
+    def compute_descriptors(self, image, keypoints, pattern):
 
-        return descriptors
+        desc = np.zeros((len(keypoints), 32), dtype=np.uint8)
+        for i, kp in enumerate(keypoints):
+            desc[i] = self.compute_orb_descriptor(kp, image, pattern)
+
+        return desc
 
     def compute_orb_descriptor(self, kpt, img, pattern):
 
