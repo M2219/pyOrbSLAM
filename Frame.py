@@ -5,8 +5,10 @@ from ORBMatcher import ORBMatcher
 from Convertor import Convertor
 
 class Frame:
+
+    nNextId = 0
     def __init__(self, mleft, mright, timestamp, mpORBextractorLeft, mpORBextractorRight,
-                   mpVocabulary, mK, mDistCoef, mbf, mThDepth, mTcw, frame_args, nNextId):
+                   mpVocabulary, mK, mDistCoef, mbf, mThDepth, mTcw, frame_args):
 
         self.mTcw = mTcw
 
@@ -35,11 +37,10 @@ class Frame:
         self.mDistCoef = mDistCoef
         self.mleft = mleft
         self.mright = mright
-        self.timestamp = timestamp
+        self.mTimeStamp = timestamp
         self.mThDepth = mThDepth
-
-        self.mnId=nNextId
-        self.mnId = self.mnId + 1
+        self.mBowVec = None
+        self.mFeatVec = None
 
         self.mpORBextractorLeft = mpORBextractorLeft
         self.mpORBextractorRight = mpORBextractorRight
@@ -57,24 +58,28 @@ class Frame:
         #if mTcw is not None:
 	        #    self.set_pose(mTcw)
 
-        mvKeysLeft, self.mDescriptorsLeft = self.mpORBextractorLeft.operator(mleft)
-        mvKeysRight, self.mDescriptorsRight = self.mpORBextractorRight.operator(mright)
-        self.N = len(mvKeysLeft)
+        self.mvKeys, self.mDescriptors = self.mpORBextractorLeft.operator(mleft)
+        self.mvKeysRight, self.mDescriptorsRight = self.mpORBextractorRight.operator(mright)
+        self.N = len(self.mvKeys)
 
-        self.newKeyLeft = self.undistort_keypoints(mvKeysLeft)
-        self.newKeyRight = self.undistort_keypoints(mvKeysRight)
+        self.undistort_keypoints()
 
         self.ORBM = ORBMatcher()
         self.compute_stereo_matches()
 
-        self.mvpMapPoints = []
+        self.mvpMapPoints = {}
         self.mvbOutlier = []
 
         self.assign_features_to_grid()
 
+        self.mnId = Frame.nNextId
+        Frame.nNextId += 1
+
     def ComputeBoW(self):
-        vCurrentDesc = Convertor.to_descriptor_vector(self.mDescriptorsLeft)
-        self.mBowVec, self.mFeatVec = self.mpORBvocabulary.transform(vCurrentDesc, 4)
+
+        if self.mBoWVec is None:
+            vCurrentDesc = Convertor.to_descriptor_vector(self.mDescriptors)
+            self.mBowVec, self.mFeatVec = self.mpORBvocabulary.transform(vCurrentDesc, 4)
 
 
     def set_pose(self, Tcw_):
@@ -103,7 +108,7 @@ class Frame:
         mGrid = []
         mg = np.zeros((self.FRAME_GRID_COLS, self.FRAME_GRID_ROWS), dtype=np.float32)
         for i in range(self.N):
-            kp = self.newKeyLeft[i]
+            kp = self.mvKeys[i]
             bflag, nGridPosX, nGridPosY = self.PosInGrid(kp)
 
             if bflag:
@@ -111,16 +116,16 @@ class Frame:
 
     def compute_stereo_matches(self):
 
-        mvuRight = [0] * self.N
-        self.mvDepth = [0] * self.N
+        self.mvuRight = [0] * self.N
+        self.mvDepth = [-1] * self.N
 
         thOrbDist = (self.ORBM.TH_HIGH  + self.ORBM.TH_LOW)/2;
         nRows = self.mpORBextractorLeft.mvImagePyramid[0].shape[0]
-        Nr = len(self.newKeyRight)
+        Nr = len(self.mvKeysRight)
 
         vRowIndices = [[] for _ in range(nRows)]
         for iR in range(Nr):
-            kp = self.newKeyRight[iR]
+            kp = self.mvKeysRight[iR]
             kpY = kp.pt[1]
             r = 2.0 * self.mvScaleFactors[kp.octave]
             maxr = math.ceil(kpY + r)
@@ -137,7 +142,7 @@ class Frame:
         vDistIdx = []
         for iL in range(self.N):
 
-            kpL = self.newKeyLeft[iL]
+            kpL = self.mvKeys[iL]
             levelL = kpL.octave
             vL = kpL.pt[1]
             uL = kpL.pt[0]
@@ -155,10 +160,10 @@ class Frame:
             bestDist = self.ORBM.TH_HIGH
             bestIdxR = 0
 
-            dL = self.mDescriptorsLeft[iL][:]
+            dL = self.mDescriptors[iL][:]
             for iC in vCandidates:
 
-                kpR = self.newKeyRight[iC]
+                kpR = self.mvKeysRight[iC]
 
                 if (kpR.octave < levelL - 1) or (kpR.octave > levelL + 1):
                     continue
@@ -175,7 +180,7 @@ class Frame:
             #print("thOrbDist", thOrbDist)
             if bestDist < thOrbDist:
 
-                uR0 = self.newKeyRight[bestIdxR].pt[0]
+                uR0 = self.mvKeysRight[bestIdxR].pt[0]
                 scaleFactor = self.mvInvScaleFactors[kpL.octave]
                 scaleduL = round(kpL.pt[0] * scaleFactor)
                 scaledvL = round(kpL.pt[1] * scaleFactor)
@@ -231,15 +236,14 @@ class Frame:
                         bestuR = uL - 0.01
 
                     self.mvDepth[iL] = self.mbf / disparity
-                    mvuRight[iL] = bestuR
+                    self.mvuRight[iL] = bestuR
                     vDistIdx.append((bestDist, iL))
 
     def unproject_stereo(self, i):
         z = self.mvDepth[i]
         if z > 0:
-            u = self.newKeyLeft[i].pt[0]
-            v = self.newKeyLeft[i].pt[1]
-            print(u, v)
+            u = self.mvKeys[i].pt[0]
+            v = self.mvKeys[i].pt[1]
             x = (u - self.cx) * z * self.invfx
             y = (v - self.cy) * z * self.invfy
             x3Dc = np.array([[x], [y], [z]], dtype=np.float32)
@@ -247,10 +251,11 @@ class Frame:
         else:
             return None
 
-    def undistort_keypoints(self, mvKeys):
+    def undistort_keypoints(self):
 
         if self.mDistCoef[0][0] == 0:
-           return mvKeys
+           self.mvKeysUn=self.mvKeys
+           return
 
         N = len(mvKeys)
         mat = np.zeros((N, 2), dtype=np.float32)

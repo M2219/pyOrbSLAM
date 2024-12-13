@@ -5,14 +5,83 @@ from ORBMatcher import ORBMatcher
 from Frame import Frame
 from Map import Map
 from Convertor import Convertor
+from MapPoint import MapPoint
 
 class KeyFrame:
-    def __init__(self, F, mMap, pKFDB, nNextId):
+    nNextId = 0  # Class-level variable for unique KeyFrame IDs
 
-        self.mnId=nNextId
-        self.mnId = self.mnId + 1
+    def __init__(self, F, pMap, pKFDB):
+        """
+        Initializes a KeyFrame object.
 
+        Args:
+            F (Frame): The frame from which the KeyFrame is created.
+            pMap (Map): The map to which this KeyFrame belongs.
+            pKFDB (KeyFrameDatabase): The KeyFrame database.
+        """
+        self.mnFrameId = F.mnId
+        self.mTimeStamp = F.mTimeStamp
+        self.mnGridCols = F.FRAME_GRID_COLS
+        self.mnGridRows = F.FRAME_GRID_ROWS
+        self.mfGridElementWidthInv = F.mfGridElementWidthInv
+        self.mfGridElementHeightInv = F.mfGridElementHeightInv
+
+        self.mnTrackReferenceForFrame = 0
+        self.mnFuseTargetForKF = 0
+        self.mnBALocalForKF = 0
+        self.mnBAFixedForKF = 0
+        self.mnLoopQuery = 0
+        self.mnLoopWords = 0
+        self.mnRelocQuery = 0
+        self.mnRelocWords = 0
+        self.mnBAGlobalForKF = 0
+
+        self.fx = F.fx
+        self.fy = F.fy
+        self.cx = F.cx
+        self.cy = F.cy
+        self.invfx = F.invfx
+        self.invfy = F.invfy
+        self.mbf = F.mbf
+        self.mb = F.mb
+        self.mThDepth = F.mThDepth
+        self.N = F.N
+
+        self.mvKeys = F.mvKeys
+        self.mvKeysUn = F.mvKeysUn
+        self.mvuRight = F.mvuRight
+        self.mvDepth = F.mvDepth
+        self.mDescriptors = F.mDescriptors.copy()
+        self.mBowVec = F.mBowVec
+        self.mFeatVec = F.mFeatVec
+
+        self.mnScaleLevels = F.mnScaleLevels
+        self.mfScaleFactor = F.mfScaleFactor
+        self.mfLogScaleFactor = F.mfLogScaleFactor
+        self.mvScaleFactors = F.mvScaleFactors
+        self.mvLevelSigma2 = F.mvLevelSigma2
+        self.mvInvLevelSigma2 = F.mvInvLevelSigma2
+
+        self.mnMinX = F.mnMinX
+        self.mnMinY = F.mnMinY
+        self.mnMaxX = F.mnMaxX
+        self.mnMaxY = F.mnMaxY
+
+        self.mK = F.mK
+        self.mvpMapPoints = F.mvpMapPoints
+        self.mpKeyFrameDB = pKFDB
+        self.mpORBvocabulary = F.mpORBvocabulary
+        self.mbFirstConnection = True
+        self.mpParent = None
+        self.mbNotErase = False
+        self.mbToBeErased = False
+        self.mbBad = False
         self.mHalfBaseline = F.mb / 2
+        self.mpMap = pMap
+
+        # Assign a unique ID
+        self.mnId = KeyFrame.nNextId
+        KeyFrame.nNextId += 1
 
         if F.mTcw is not None:
             self.set_pose(F.mTcw)
@@ -63,12 +132,11 @@ class KeyFrame:
         vpMP = []
 
         # Get a copy of the map points
-        with self.mMutexFeatures:
-            vpMP = self.mvpMapPoints.copy()
+        vpMP = self.mvpMapPoints.copy()
 
         # Count observations of MapPoints in other KeyFrames
         for pMP in vpMP:
-            if not pMP or pMP.isBad():
+            if not pMP or pMP.is_bad():
                 continue
 
             observations = pMP.GetObservations()
@@ -159,31 +227,27 @@ class KeyFrame:
             return self.mvpOrderedConnectedKeyFrames[:n]
 
     def add_map_point(self, pMP, idx):
-        if idx >= len(self.mvpMapPoints):
-            self.mvpMapPoints.extend([None] * (idx + 1 - len(self.mvpMapPoints)))
         self.mvpMapPoints[idx] = pMP
 
     def erase_map_point_match_by_index(self, idx):
         if 0 <= idx < len(self.mvpMapPoints):
-            self.mvpMapPoints[idx] = None
+           del self.mvpMapPoints[idx]
 
     def erase_map_point_match(self, pMP):
         idx = pMP.get_index_in_key_frame(self)
         if idx >= 0 and idx < len(self.mvpMapPoints):
-            self.mvpMapPoints[idx] = None
+            del self.mvpMapPoints[idx]
 
     def replace_map_point_match(self, idx, pMP):
-        if idx >= len(self.mvpMapPoints):
-            self.mvpMapPoints.extend([None] * (idx + 1 - len(self.mvpMapPoints)))
         self.mvpMapPoints[idx] = pMP
 
     def get_map_points(self):
-        return {pMP for pMP in self.mvpMapPoints if pMP and not pMP.isBad()}
+        return {pMP for pMP in self.mvpMapPoints if pMP and not pMP.is_bad()}
 
     def tracked_map_points(self, minObs):
         nPoints = 0
         for pMP in self.mvpMapPoints:
-            if pMP and not pMP.isBad():
+            if pMP and not pMP.is_bad():
                 if minObs > 0 and pMP.Observations() >= minObs:
                     nPoints += 1
                 elif minObs == 0:
@@ -233,74 +297,76 @@ class KeyFrame:
         if self.mbToBeErased:
             self.SetBadFlag()
 
-def SetBadFlag(self):
-    """
-    Marks the KeyFrame as bad, removes connections, updates the spanning tree, and erases references.
-    """
-    if self.mnId == 0:
-        return
-    elif self.mbNotErase:
-        self.mbToBeErased = True
-        return
+    def SetBadFlag(self):
+        """
+        Marks the KeyFrame as bad, removes connections, updates the spanning tree, and erases references.
+        """
+        if self.mnId == 0:
+            return
+        elif self.mbNotErase:
+            self.mbToBeErased = True
+            return
 
-    for pKF in list(self.mConnectedKeyFrameWeights.keys()):
-        pKF.EraseConnection(self)
+        for pKF in list(self.mConnectedKeyFrameWeights.keys()):
+            pKF.EraseConnection(self)
 
-    for pMP in self.mvpMapPoints:
-        if pMP:
-            pMP.EraseObservation(self)
+        for pMP in self.mvpMapPoints:
+            if pMP:
+                pMP.EraseObservation(self)
 
-    # Clear connections and features
-    self.mConnectedKeyFrameWeights.clear()
-    self.mvpOrderedConnectedKeyFrames.clear()
+        # Clear connections and features
+        self.mConnectedKeyFrameWeights.clear()
+        self.mvpOrderedConnectedKeyFrames.clear()
 
-    # Update Spanning Tree
-    sParentCandidates = {self.mpParent}
+        # Update Spanning Tree
+        sParentCandidates = {self.mpParent}
 
-    while self.mspChildrens:
-        bContinue = False
-        max_weight = -1
-        pC = None
-        pP = None
+        while self.mspChildrens:
+            bContinue = False
+            max_weight = -1
+            pC = None
+            pP = None
 
-        for pKF in self.mspChildrens.copy():
-            if pKF.isBad():
-                continue
+            for pKF in self.mspChildrens.copy():
+                if pKF.is_bad():
+                    continue
 
-            # Check if a parent candidate is connected to the keyframe
-            vpConnected = pKF.GetVectorCovisibleKeyFrames()
-            for spc in sParentCandidates:
-                for vp in vpConnected:
-                    if vp.mnId == spc.mnId:
-                        weight = pKF.GetWeight(vp)
-                        if weight > max_weight:
-                            pC = pKF
-                            pP = vp
-                            max_weight = weight
-                            bContinue = True
+                # Check if a parent candidate is connected to the keyframe
+                vpConnected = pKF.GetVectorCovisibleKeyFrames()
+                for spc in sParentCandidates:
+                    for vp in vpConnected:
+                        if vp.mnId == spc.mnId:
+                            weight = pKF.GetWeight(vp)
+                            if weight > max_weight:
+                                pC = pKF
+                                pP = vp
+                                max_weight = weight
+                                bContinue = True
 
-        if bContinue:
-            pC.ChangeParent(pP)
-            sParentCandidates.add(pC)
-            self.mspChildrens.remove(pC)
-        else:
-            break
 
-    # Assign children with no covisibility links to the original parent
-    if self.mspChildrens:
-        for pKF in self.mspChildrens:
-            pKF.ChangeParent(self.mpParent)
+            if bContinue:
+                pC.ChangeParent(pP)
+                sParentCandidates.add(pC)
+                self.mspChildrens.remove(pC)
+            else:
+                break
 
-    # Remove from parent's children and mark as bad
-    self.mpParent.EraseChild(self)
-    self.mTcp = self.Tcw @ self.mpParent.GetPoseInverse()
-    self.mbBad = True
+        # Assign children with no covisibility links to the original parent
+        if self.mspChildrens:
+            for pKF in self.mspChildrens:
+                pKF.ChangeParent(self.mpParent)
 
-    # Erase from the map and database
-    self.mpMap.EraseKeyFrame(self)
-    self.mpKeyFrameDB.erase(self)
+        # Remove from parent's children and mark as bad
+        self.mpParent.EraseChild(self)
+        self.mTcp = self.Tcw @ self.mpParent.GetPoseInverse()
+        self.mbBad = True
 
-    def isBad(self):
+        # Erase from the map and database
+        self.mpMap.EraseKeyFrame(self)
+        self.mpKeyFrameDB.erase(self)
+
+
+    def is_bad(self):
         return self.mbBad
 
     def EraseConnection(self, pKF):
@@ -547,20 +613,14 @@ if __name__ == "__main__":
     mTcw[1, 3] = 0.3
     mTcw[2, 3] = 1.0
     """
-    mCurrentFrame = Frame(mleft, mright, timestamp, mORBExtractorLeft, mORBExtractorRight, vocabulary, mk, mDistCoef, mbf, mThDepth, mTcw, frame_args, nNextId=0)
+    mCurrentFrame = Frame(mleft, mright, timestamp, mORBExtractorLeft, mORBExtractorRight, vocabulary, mk, mDistCoef, mbf, mThDepth, mTcw, frame_args)
 
-    mMap = Map()
+    mpMap = Map()
     pKFDB = None
 
-    mKeyFrame = KeyFrame(mFrame, mMap, pKFDB, nNextId=0)
-    mMap.add_key_frame(mKeyFrame)
+    pKFini = KeyFrame(mCurrentFrame, mpMap, pKFDB)
+    mpMap.add_key_frame(pKFini)
 
-    z = mCurrentFrame.mvDepth[41]
-    x3D = mCurrentFrame.unproject_stereo(41)
-    pNewMP = MapPoint(x3D, pKFini, mpMap)
-
-
-    """
     for i in range(mCurrentFrame.N):
         z = mCurrentFrame.mvDepth[i]
         if z > 0:
@@ -573,11 +633,9 @@ if __name__ == "__main__":
             # Associate the new MapPoint with the KeyFrame
             pKFini.add_map_point(pNewMP, i)
             # Compute descriptors and update normals and depth
-            pNewMP.compute_distinctive_descriptors()
             pNewMP.update_normal_and_depth()
             # Add the MapPoint to the map
             mpMap.add_map_point(pNewMP)
             # Associate the MapPoint with the current frame
             mCurrentFrame.mvpMapPoints[i] = pNewMP
 
-    """

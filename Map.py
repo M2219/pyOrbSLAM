@@ -15,8 +15,7 @@ class Map:
 
     def add_map_point(self, pMP):
         """Adds a MapPoint to the map."""
-        with self.mMutexMap:
-            self.mspMapPoints.add(pMP)
+        self.mspMapPoints.add(pMP)
 
     def erase_map_point(self, pMP):
         """Erases a MapPoint from the map."""
