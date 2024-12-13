@@ -5,7 +5,7 @@ import cv2
 import glob
 import os
 from typing import List
-
+from pyDBoW.TemplatedVocabulary import TemplatedVocabulary
 
 parser = argparse.ArgumentParser(description="pyOrbSLAM")
 parser.add_argument("--pathToSequence", default="./00", help="path to sequence")
@@ -13,6 +13,22 @@ parser.add_argument("--pathToVocabulary", default="Vocabulary/ORBvoc.txt", help=
 parser.add_argument("--pathToSettings", default="configs/KITTI00-02.yaml", help="path to settings")
 
 args = parser.parse_args()
+
+
+class SLAM(object):
+    def __init__(self, pathToVocabulary, pathToSettings, mode, visualization) -> None:
+        super(SLAM, self).__init__()
+
+        self.mode = mode
+        self.visualization = visualization
+
+        # Load ORB Vocabulary
+
+
+
+        print("initialization finally done!")
+
+
 
 def read_all_lines(filename: str) -> List[str]:
     with open(filename) as f:
@@ -33,11 +49,11 @@ def main(pathToVocabulary, pathToSettings, pathToSequence):
     leftImages, rightImages, timeStamps = LoadImages(pathToSequence)
     nImages = len(leftImages)
 
-    # Create SLAM system. It initializes all system threads and gets ready to process frames.
-    ORB_SLAM2 = SLAM(pathToVocabulary, pathToSettings, ORB_SLAM2::System::STEREO, True)
+    vocabulary = TemplatedVocabulary(k=5, L=3, weighting="TF_IDF", scoring="L1_NORM")
+    vocabulary.load_from_text_file("./Vocabulary/ORBvoc.txt")
 
-    #ORB_SLAM2::System SLAM(argv[1],argv[2],ORB_SLAM2::System::STEREO,true)
-    print(nImages)
+
+
     return 0
 
 

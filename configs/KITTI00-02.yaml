@@ -1,4 +1,3 @@
-%YAML:1.0
 
 #--------------------------------------------------------------------------------------------
 # Camera Parameters. Adjust them!
@@ -56,7 +55,7 @@ ORBextractor.minThFAST: 7
 Viewer.KeyFrameSize: 0.6
 Viewer.KeyFrameLineWidth: 2
 Viewer.GraphLineWidth: 1
-Viewer.PointSize:2
+Viewer.PointSize: 2
 Viewer.CameraSize: 0.7
 Viewer.CameraLineWidth: 3
 Viewer.ViewpointX: 0

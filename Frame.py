@@ -2,11 +2,16 @@ import numpy as np
 import cv2
 import math
 from ORBMatcher import ORBMatcher
-
+from Convertor import Convertor
 
 class Frame:
     def __init__(self, mleft, mright, timestamp, mpORBextractorLeft, mpORBextractorRight,
-                   mpVocabulary, mK, mDistCoef, mbf, mThDepth, frame_args, nNextId):
+                   mpVocabulary, mK, mDistCoef, mbf, mThDepth, mTcw, frame_args, nNextId):
+
+        self.mTcw = mTcw
+
+        if self.mTcw is not None:
+            self.set_pose(self.mTcw)
 
         # self.args = args
         self.fx = frame_args[0]
@@ -24,9 +29,9 @@ class Frame:
         self.FRAME_GRID_ROWS = frame_args[12]
         self.FRAME_GRID_COLS = frame_args[13]
         #
-
+        self.mpORBvocabulary = mpVocabulary
         self.mbf = mbf
-        self.mK =mk
+        self.mK =mK
         self.mDistCoef = mDistCoef
         self.mleft = mleft
         self.mright = mright
@@ -67,6 +72,21 @@ class Frame:
 
         self.assign_features_to_grid()
 
+    def ComputeBoW(self):
+        vCurrentDesc = Convertor.to_descriptor_vector(self.mDescriptorsLeft)
+        self.mBowVec, self.mFeatVec = self.mpORBvocabulary.transform(vCurrentDesc, 4)
+
+
+    def set_pose(self, Tcw_):
+        self.mTcw = Tcw_.copy()
+        self.update_pose_matrices()
+
+    def update_pose_matrices(self):
+        self.mRcw = self.mTcw[:3, :3]
+        self.mRwc = self.mRcw.T
+        self.mtcw = self.mTcw[:3, 3].reshape(3, 1)
+        self.mOw = -np.dot(self.mRwc, self.mtcw)
+
     def PosInGrid(self, kp):
 
         posX = round((kp.pt[0] - self.mnMinX) * self.mfGridElementWidthInv)
@@ -92,7 +112,7 @@ class Frame:
     def compute_stereo_matches(self):
 
         mvuRight = [0] * self.N
-        mvDepth = [0] * self.N
+        self.mvDepth = [0] * self.N
 
         thOrbDist = (self.ORBM.TH_HIGH  + self.ORBM.TH_LOW)/2;
         nRows = self.mpORBextractorLeft.mvImagePyramid[0].shape[0]
@@ -210,9 +230,22 @@ class Frame:
                         disparity = 0.01
                         bestuR = uL - 0.01
 
-                    mvDepth[iL] = mbf / disparity
+                    self.mvDepth[iL] = self.mbf / disparity
                     mvuRight[iL] = bestuR
                     vDistIdx.append((bestDist, iL))
+
+    def unproject_stereo(self, i):
+        z = self.mvDepth[i]
+        if z > 0:
+            u = self.newKeyLeft[i].pt[0]
+            v = self.newKeyLeft[i].pt[1]
+            print(u, v)
+            x = (u - self.cx) * z * self.invfx
+            y = (v - self.cy) * z * self.invfy
+            x3Dc = np.array([[x], [y], [z]], dtype=np.float32)
+            return self.mRwc @ x3Dc + self.mOw.reshape(3, 1)
+        else:
+            return None
 
     def undistort_keypoints(self, mvKeys):
 
@@ -243,17 +276,6 @@ class Frame:
             mvKeysUn.append(new_kp)
 
         return mvKeysUn
-
-    def set_pose(self, Tcw_):
-        self.Tcw = Tcw_.copy()
-        self.update_pose_Matrices()
-
-    def update_pose_matrices(self):
-        self.mRcw = self.mTcw[:3, :3]
-        self.mRwc = self.mRcw.T
-        self.mtcw = self.mTcw[:3, 3]
-        self.mOw = -np.dot(self.mRwc, self.mtcw)
-
 
 def compute_image_bounds(imLeft, mK, mDistCoef):
 
@@ -369,6 +391,24 @@ if __name__ == "__main__":
     # should be added to args
     frame_args = [fx, fy, cx, cy, invfx, invfy, mfGridElementWidthInv, mfGridElementHeightInv, mnMinX, mnMaxX, mnMinY, mnMaxY, FRAME_GRID_ROWS, FRAME_GRID_COLS]
 
-    mFrame = Frame(mleft, mright, timestamp, mORBExtractorLeft, mORBExtractorRight, vocabulary, mk, mDistCoef, mbf, mThDepth, frame_args, nNextId=0)
+    mTcw = np.eye(4, dtype=np.float32)
+
+    # Rotation
+    mTcw[0, 0] = 0.866
+    mTcw[0, 1] = -0.5
+    mTcw[1, 0] = 0.5
+    mTcw[1, 1] = 0.866
+    mTcw[2, 2] = 1.0
+
+    # Set translation
+    mTcw[0, 3] = 0.5
+    mTcw[1, 3] = 0.3
+    mTcw[2, 3] = 1.0
+
+
+    mFrame = Frame(mleft, mright, timestamp, mORBExtractorLeft, mORBExtractorRight, vocabulary, mk, mDistCoef, mbf, mThDepth, mTcw, frame_args, nNextId=0)
+
+
+
 
 

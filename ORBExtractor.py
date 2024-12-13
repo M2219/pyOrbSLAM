@@ -165,8 +165,6 @@ class ORBExtractor:
             desc_t.append(desc_computed)
 
         self.descriptors = np.concatenate(desc_t)
-        print(self.descriptors.shape)
-        exit()
         return self.keypoints, self.descriptors
 
     def compute_pyramid(self, image):

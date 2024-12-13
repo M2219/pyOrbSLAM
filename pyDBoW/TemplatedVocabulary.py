@@ -1,10 +1,10 @@
 import numpy as np
 from collections import defaultdict
 from typing import List, Dict, Tuple
-from BowVector import BowVector
-from FeatureVector import FeatureVector
-from FORB import FORB
-from ScoringObject import GeneralScoring as gs
+from .BowVector import BowVector
+from .FeatureVector import FeatureVector
+from .FORB import FORB
+from .ScoringObject import GeneralScoring as gs
 
 class Node:
     """Represents a node in the vocabulary tree."""
