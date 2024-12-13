@@ -620,7 +620,7 @@ if __name__ == "__main__":
 
     pKFini = KeyFrame(mCurrentFrame, mpMap, pKFDB)
     mpMap.add_key_frame(pKFini)
-
+    print(mCurrentFrame.N)
     for i in range(mCurrentFrame.N):
         z = mCurrentFrame.mvDepth[i]
         if z > 0:
@@ -639,3 +639,4 @@ if __name__ == "__main__":
             # Associate the MapPoint with the current frame
             mCurrentFrame.mvpMapPoints[i] = pNewMP
 
+    print(f"New map created with {mpMap.map_points_in_map()} points")

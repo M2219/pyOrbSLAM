@@ -1,11 +1,13 @@
 from __future__ import print_function, division
 
 import argparse
-import cv2
 import glob
 import os
+
+import cv2
+
+from System import System
 from typing import List
-from pyDBoW.TemplatedVocabulary import TemplatedVocabulary
 
 parser = argparse.ArgumentParser(description="pyOrbSLAM")
 parser.add_argument("--pathToSequence", default="./00", help="path to sequence")
@@ -13,21 +15,6 @@ parser.add_argument("--pathToVocabulary", default="Vocabulary/ORBvoc.txt", help=
 parser.add_argument("--pathToSettings", default="configs/KITTI00-02.yaml", help="path to settings")
 
 args = parser.parse_args()
-
-
-class SLAM(object):
-    def __init__(self, pathToVocabulary, pathToSettings, mode, visualization) -> None:
-        super(SLAM, self).__init__()
-
-        self.mode = mode
-        self.visualization = visualization
-
-        # Load ORB Vocabulary
-
-
-
-        print("initialization finally done!")
-
 
 
 def read_all_lines(filename: str) -> List[str]:
@@ -49,12 +36,9 @@ def main(pathToVocabulary, pathToSettings, pathToSequence):
     leftImages, rightImages, timeStamps = LoadImages(pathToSequence)
     nImages = len(leftImages)
 
-    vocabulary = TemplatedVocabulary(k=5, L=3, weighting="TF_IDF", scoring="L1_NORM")
-    vocabulary.load_from_text_file("./Vocabulary/ORBvoc.txt")
+    SLAM = System()
 
-
-
-    return 0
+    return 1
 
 
 

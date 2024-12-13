@@ -56,8 +56,7 @@ class Map:
 
     def map_points_in_map(self):
         """Retrieves the count of MapPoints in the map."""
-        with self.mMutexMap:
-            return len(self.mspMapPoints)
+        return len(self.mspMapPoints)
 
     def key_frames_in_map(self):
         """Retrieves the count of KeyFrames in the map."""
