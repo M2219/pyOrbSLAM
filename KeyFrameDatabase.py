@@ -1,7 +1,5 @@
 import numpy as np
-class KeyFrameDataBase:
-    def __init__(self):
 
-    def descriptor_distance(self):
-        return
-
+class KeyFrameDatabase:
+    def __init__(self, voc):
+        self.mpVoc = voc

@@ -31,12 +31,12 @@ def LoadImages(pathToSeq):
     return imageLeft, imageRight, vTimestamps
 
 
-def main(pathToVocabulary, pathToSettings, pathToSequence):
+def main():
 
-    leftImages, rightImages, timeStamps = LoadImages(pathToSequence)
+    leftImages, rightImages, timeStamps = LoadImages(args.pathToSequence)
     nImages = len(leftImages)
 
-    SLAM = System()
+    SLAM = System(args.pathToVocabulary, args.pathToSettings, sensor="STEREO", bUseViewer=True)
 
     return 1
 
@@ -45,7 +45,7 @@ def main(pathToVocabulary, pathToSettings, pathToSequence):
 if __name__ == "__main__":
 
 
-    main(args.pathToVocabulary, args.pathToSettings, args.pathToSequence)
+    main()
 
 
 

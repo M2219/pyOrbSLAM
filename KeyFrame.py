@@ -1,6 +1,9 @@
+import threading
+import math
+
 import numpy as np
 import cv2
-import math
+
 from ORBMatcher import ORBMatcher
 from Frame import Frame
 from Map import Map
@@ -19,6 +22,10 @@ class KeyFrame:
             pMap (Map): The map to which this KeyFrame belongs.
             pKFDB (KeyFrameDatabase): The KeyFrame database.
         """
+        self.mMutexPose = threading.Lock()
+        self.mMutexConnections = threading.Lock()
+        self.mMutexFeatures = threading.Lock()
+
         self.mnFrameId = F.mnId
         self.mTimeStamp = F.mTimeStamp
         self.mnGridCols = F.FRAME_GRID_COLS
@@ -91,48 +98,57 @@ class KeyFrame:
         self.mConnectedKeyFrameWeights = {}
 
     def set_pose(self, Tcw_):
+        with self.mMutexPose:
+            self.Tcw = Tcw_.copy()
 
-        self.Tcw = Tcw_.copy()
+            Rcw = self.Tcw[:3, :3]
+            tcw = self.Tcw[:3, 3].reshape(3, 1)
 
-        Rcw = self.Tcw[:3, :3]
-        tcw = self.Tcw[:3, 3].reshape(3, 1)
+            Rwc = Rcw.T
+            self.Ow = -np.dot(Rwc, tcw)
+            self.Ow = self.Ow
 
-        Rwc = Rcw.T
-        self.Ow = -np.dot(Rwc, tcw)
+            self.Twc = np.eye(4, dtype=self.Tcw.dtype)
+            self.Twc[:3, :3] = Rwc
+            self.Twc[:3, 3] = self.Ow.flatten()
+            self.Twc = self.Twc
 
-        self.Twc = np.eye(4, dtype=self.Tcw.dtype)
-        self.Twc[:3, :3] = Rwc
-        self.Twc[:3, 3] = self.Ow.flatten()
-
-        center = np.array([[self.mHalfBaseline], [0], [0], [1]], dtype=np.float32)
-        self.Cw = np.dot(self.Twc, center)
+            center = np.array([[self.mHalfBaseline], [0], [0], [1]], dtype=np.float32)
+            self.Cw = np.dot(self.Twc, center)
+            self.Cw = self.Cw
 
     def compute_BoW(self):
 
         vCurrentDesc = Convertor.to_descriptor_vector(self.F.mDescriptorsLeft)
-        self.mBowVec, self.mFeatVec = self.F.mpORBvocabulary.transform(vCurrentDesc, 4)
+        self.mBowVec, self.mFeatVec = self.mpORBvocabulary.transform(vCurrentDesc, 4)
 
     def get_pose_inverse(self):
-        return self.Twc.copy()
+        with self.mMutexPose:
+            return self.Twc.copy()
 
     def get_camera_center(self):
-        return self.Ow.copy()
+        with self.mMutexPose:
+            return self.Ow.copy()
 
     def get_stereo_center(self):
-        return self.Cw.copy()
+        with self.mMutexPose:
+            return self.Cw.copy()
 
     def get_rotation(self):
-        return self.Tcw[:3, :3].copy()
+        with self.mMutexPose:
+            return self.Tcw[:3, :3].copy()
 
     def get_translation(self):
-        return self.Tcw[:3, 3].reshape(3, 1).copy()
+        with self.mMutexPose:
+            return self.Tcw[:3, 3].reshape(3, 1).copy()
 
     def update_connections(self):
         KFcounter = defaultdict(int)
         vpMP = []
 
         # Get a copy of the map points
-        vpMP = self.mvpMapPoints.copy()
+        with self.mMutexFeatures:
+            vpMP = self.mvpMapPoints.copy()
 
         # Count observations of MapPoints in other KeyFrames
         for pMP in vpMP:
@@ -185,12 +201,14 @@ class KeyFrame:
                 self.mbFirstConnection = False
 
     def add_connection(self, pKF, weight):
-        if pKF not in self.mConnectedKeyFrameWeights:
-            self.mConnectedKeyFrameWeights[pKF] = weight
-        elif self.mConnectedKeyFrameWeights[pKF] != weight:
-            self.mConnectedKeyFrameWeights[pKF] = weight
-        else:
-            return
+
+        with self.mMutexConnections:
+            if pKF not in self.mConnectedKeyFrameWeights:
+                self.mConnectedKeyFrameWeights[pKF] = weight
+            elif self.mConnectedKeyFrameWeights[pKF] != weight:
+                self.mConnectedKeyFrameWeights[pKF] = weight
+            else:
+                return
 
         self.update_best_covisibles()
 
@@ -198,17 +216,38 @@ class KeyFrame:
         """
         Updates the lists of ordered connected KeyFrames and their corresponding weights.
         """
-        vPairs = [(weight, pKF) for pKF, weight in self.mConnectedKeyFrameWeights.items()]
-        vPairs.sort()
-        self.mvpOrderedConnectedKeyFrames = [pKF for _, pKF in vPairs]
-        self.mvOrderedWeights = [weight for weight, _ in vPairs]
+        with self.mMutexConnections:
+
+            vPairs = [(weight, pKF) for pKF, weight in self.mConnectedKeyFrameWeights.items()]
+            vPairs.sort()
+            self.mvpOrderedConnectedKeyFrames = [pKF for _, pKF in vPairs]
+            self.mvOrderedWeights = [weight for weight, _ in vPairs]
+
+
+    def get_weight(pKF):
+        """
+        Retrieves the weight of the connection to the given KeyFrame.
+
+        Args:
+            pKF (KeyFrame): The connected KeyFrame.
+
+        Returns:
+            int: The weight of the connection, or 0 if not connected.
+        """
+        with self.mMutexConnections:
+            if pKF in shared_state["mConnectedKeyFrameWeights"]:
+                return shared_state["mConnectedKeyFrameWeights"][pKF]
+            else:
+                return 0
 
     def get_connected_key_frames(self):
-        return set(self.mConnectedKeyFrameWeights.keys())
+        with self.mMutexConnections:
+            return set(self.mConnectedKeyFrameWeights.keys())
 
 
     def get_vector_covisible_key_frames(self):
-        return self.mvpOrderedConnectedKeyFrames.copy()
+        with self.mMutexConnections:
+            return self.mvpOrderedConnectedKeyFrames.copy()
 
     def get_best_covisibility_key_frames(self, N):
         if len(self.mvpOrderedConnectedKeyFrames) < N:
@@ -217,8 +256,9 @@ class KeyFrame:
             return self.mvpOrderedConnectedKeyFrames[:N]
 
     def get_covisibles_by_weight(self, w):
-        if not self.mvpOrderedConnectedKeyFrames:
-            return []
+        with self.mMutexConnections:
+            if not self.mvpOrderedConnectedKeyFrames:
+                return []
 
         n = bisect_right(self.mvOrderedWeights, w)
         if n == len(self.mvOrderedWeights):
@@ -227,11 +267,13 @@ class KeyFrame:
             return self.mvpOrderedConnectedKeyFrames[:n]
 
     def add_map_point(self, pMP, idx):
-        self.mvpMapPoints[idx] = pMP
+        with self.mMutexFeatures:
+            self.mvpMapPoints[idx] = pMP
 
     def erase_map_point_match_by_index(self, idx):
-        if 0 <= idx < len(self.mvpMapPoints):
-           del self.mvpMapPoints[idx]
+        with self.mMutexFeatures:
+            if 0 <= idx < len(self.mvpMapPoints):
+               del self.mvpMapPoints[idx]
 
     def erase_map_point_match(self, pMP):
         idx = pMP.get_index_in_key_frame(self)
@@ -242,57 +284,70 @@ class KeyFrame:
         self.mvpMapPoints[idx] = pMP
 
     def get_map_points(self):
-        return {pMP for pMP in self.mvpMapPoints if pMP and not pMP.is_bad()}
+        with self.mMutexFeatures:
+            return {pMP for pMP in self.mvpMapPoints if pMP and not pMP.is_bad()}
 
     def tracked_map_points(self, minObs):
-        nPoints = 0
-        for pMP in self.mvpMapPoints:
-            if pMP and not pMP.is_bad():
-                if minObs > 0 and pMP.Observations() >= minObs:
-                    nPoints += 1
-                elif minObs == 0:
-                    nPoints += 1
-        return nPoints
+        with self.mMutexFeatures:
+            nPoints = 0
+            for pMP in self.mvpMapPoints:
+                if pMP and not pMP.is_bad():
+                    if minObs > 0 and pMP.Observations() >= minObs:
+                        nPoints += 1
+                    elif minObs == 0:
+                        nPoints += 1
+            return nPoints
 
     def get_map_point_matches(self):
-        return self.mvpMapPoints.copy()
+        with self.mMutexFeatures:
+            return self.mvpMapPoints.copy()
 
     def get_map_point(self, idx):
-        return self.mvpMapPoints[idx] if 0 <= idx < len(self.mvpMapPoints) else None
-
+        with self.mMutexFeatures:
+            return self.mvpMapPoints[idx] if 0 <= idx < len(self.mvpMapPoints) else None
 
     def add_child(self, pKF):
-        self.mspChildrens.add(pKF)
+        with self.mMutexConnections:
+            self.mspChildrens.add(pKF)
 
     def erase_child(self, pKF):
-        self.mspChildrens.discard(pKF)
+        with self.mMutexConnections:
+            self.mspChildrens.discard(pKF)
 
     def change_parent(self, pKF):
-        self.mpParent = pKF
-        pKF.AddChild(self)
+        with self.mMutexConnections:
+            self.mpParent = pKF
+            pKF.AddChild(self)
 
     def get_childs(self):
-        return set(self.mspChildrens)
+        with self.mMutexConnections:
+            return set(self.mspChildrens)
 
     def get_parent(self):
-        return self.mpParent
+        with self.mMutexConnections:
+            return self.mpParent
 
     def has_child(self, pKF):
-        return pKF in self.mspChildrens
+        with self.mMutexConnections:
+            return pKF in self.mspChildrens
 
     def add_loop_edge(self, pKF):
-        self.mbNotErase = True
-        self.mspLoopEdges.add(pKF)
+        with self.mMutexConnections:
+            self.mbNotErase = True
+            self.mspLoopEdges.add(pKF)
 
     def get_loop_edges(self):
-        return set(self.mspLoopEdges)
+        with self.mMutexConnections:
+            return set(self.mspLoopEdges)
 
     def set_not_erase(self):
-        self.mbNotErase = True
+        with self.mMutexConnections:
+            self.mbNotErase = True
 
     def set_erase(self):
-        if not self.mspLoopEdges:
-            self.mbNotErase = False
+        with self.mMutexConnections:
+            if not self.mspLoopEdges:
+                self.mbNotErase = False
 
         if self.mbToBeErased:
             self.SetBadFlag()
@@ -314,66 +369,74 @@ class KeyFrame:
             if pMP:
                 pMP.EraseObservation(self)
 
-        # Clear connections and features
-        self.mConnectedKeyFrameWeights.clear()
-        self.mvpOrderedConnectedKeyFrames.clear()
+        with self.mMutexConnections:
+            with self.mMutexFeatures:
+                # Clear connections and features
+                self.mConnectedKeyFrameWeights.clear()
+                self.mvpOrderedConnectedKeyFrames.clear()
 
-        # Update Spanning Tree
-        sParentCandidates = {self.mpParent}
+                # Update Spanning Tree
+                sParentCandidates = {self.mpParent}
 
-        while self.mspChildrens:
-            bContinue = False
-            max_weight = -1
-            pC = None
-            pP = None
+                while self.mspChildrens:
+                    bContinue = False
+                    max_weight = -1
+                    pC = None
+                    pP = None
 
-            for pKF in self.mspChildrens.copy():
-                if pKF.is_bad():
-                    continue
+                    for pKF in self.mspChildrens.copy():
+                        if pKF.is_bad():
+                            continue
 
-                # Check if a parent candidate is connected to the keyframe
-                vpConnected = pKF.GetVectorCovisibleKeyFrames()
-                for spc in sParentCandidates:
-                    for vp in vpConnected:
-                        if vp.mnId == spc.mnId:
-                            weight = pKF.GetWeight(vp)
-                            if weight > max_weight:
-                                pC = pKF
-                                pP = vp
-                                max_weight = weight
-                                bContinue = True
+                        # Check if a parent candidate is connected to the keyframe
+                        vpConnected = pKF.GetVectorCovisibleKeyFrames()
+                        for spc in sParentCandidates:
+                            for vp in vpConnected:
+                                if vp.mnId == spc.mnId:
+                                    weight = pKF.GetWeight(vp)
+                                    if weight > max_weight:
+                                        pC = pKF
+                                        pP = vp
+                                        max_weight = weight
+                                        bContinue = True
 
 
-            if bContinue:
-                pC.ChangeParent(pP)
-                sParentCandidates.add(pC)
-                self.mspChildrens.remove(pC)
-            else:
-                break
+                    if bContinue:
+                        pC.ChangeParent(pP)
+                        sParentCandidates.add(pC)
+                        self.mspChildrens.remove(pC)
+                    else:
+                        break
 
-        # Assign children with no covisibility links to the original parent
-        if self.mspChildrens:
-            for pKF in self.mspChildrens:
-                pKF.ChangeParent(self.mpParent)
 
-        # Remove from parent's children and mark as bad
-        self.mpParent.EraseChild(self)
-        self.mTcp = self.Tcw @ self.mpParent.GetPoseInverse()
-        self.mbBad = True
+                # Assign children with no covisibility links to the original parent
+                if self.mspChildrens:
+                    for pKF in self.mspChildrens:
+                        pKF.ChangeParent(self.mpParent)
 
-        # Erase from the map and database
-        self.mpMap.EraseKeyFrame(self)
-        self.mpKeyFrameDB.erase(self)
+                # Remove from parent's children and mark as bad
+                self.mpParent.EraseChild(self)
+                self.mTcp = self.Tcw @ self.mpParent.GetPoseInverse()
+                self.mbBad = True
+
+            # Erase from the map and database
+            self.mpMap.EraseKeyFrame(self)
+            self.mpKeyFrameDB.erase(self)
+
 
 
     def is_bad(self):
-        return self.mbBad
+        with self.mMutexConnections:
+            return self.mbBad
 
     def EraseConnection(self, pKF):
         bUpdate = False
-        if pKF in self.mConnectedKeyFrameWeights:
-            del self.mConnectedKeyFrameWeights[pKF]
-            bUpdate = True
+
+        with self.mMutexConnections:
+
+            if pKF in self.mConnectedKeyFrameWeights:
+                del self.mConnectedKeyFrameWeights[pKF]
+                bUpdate = True
 
         if bUpdate:
             self.UpdateBestCovisibles()
@@ -465,9 +528,10 @@ class KeyFrame:
         Returns:
             float: Median depth value.
         """
-        with self.mMutexFeatures, self.mMutexPose:
-            vpMapPoints = self.mvpMapPoints.copy()
-            Tcw_ = self.Tcw.copy()
+        with self.mMutexFeatures:
+            with self.mMutexPose:
+                vpMapPoints = self.mvpMapPoints.copy()
+                Tcw_ = self.Tcw.copy()
 
         vDepths = []
         Rcw2 = Tcw_[:3, :3][2].reshape(1, 3)

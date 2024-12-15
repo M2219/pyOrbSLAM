@@ -1,17 +1,11 @@
 import cv2
 
 class Viewer:
-    def __init__(self, pSystem, pFrameDrawer, pMapDrawer, pTracking, strSettingPath):
-        """
-        Initializes the Viewer.
+    def __init__(self, pSystem, pFrameDrawer, pMapDrawer, pTracking, strSettingPath, ss):
 
-        Args:
-            pSystem (System): Pointer to the system.
-            pFrameDrawer (FrameDrawer): Pointer to the frame drawer.
-            pMapDrawer (MapDrawer): Pointer to the map drawer.
-            pTracking (Tracking): Pointer to the tracking.
-            strSettingPath (str): Path to the settings file.
-        """
+        self.ss = ss
+        # mutex
+
         self.mpSystem = pSystem
         self.mpFrameDrawer = pFrameDrawer
         self.mpMapDrawer = pMapDrawer

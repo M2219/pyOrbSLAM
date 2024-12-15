@@ -1,14 +1,12 @@
 class LoopClosing:
-    def __init__(self, pMap, pDB, pVoc, bFixScale):
-        """
-        Initializes the LoopClosing class.
+    def __init__(self, pMap, pDB, pVoc, bFixScale, ss):
 
-        Args:
-            pMap (Map): Pointer to the map.
-            pDB (KeyFrameDatabase): Pointer to the KeyFrame database.
-            pVoc (ORBVocabulary): Pointer to the ORB vocabulary.
-            bFixScale (bool): Whether to fix the scale.
-        """
+
+        self.ss = ss
+        #mutex
+
+
+
         self.mbResetRequested = False
         self.mbFinishRequested = False
         self.mbFinished = True

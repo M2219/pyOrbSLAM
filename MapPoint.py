@@ -1,4 +1,7 @@
+import threading
 import numpy as np
+
+from Map import ss_map
 
 class MapPoint:
     nNextId = 0  # Class-level variable for unique MapPoint IDs
@@ -12,6 +15,10 @@ class MapPoint:
             pRefKF (KeyFrame): Reference KeyFrame.
             pMap (Map): The map to which this MapPoint belongs.
         """
+        self.mGlobalMutex = threading.Lock()
+        self.mMutexPos = threading.Lock()
+        self.mMutexFeatures = threading.Lock()
+
         self.mWorldPos = Pos.copy()  # Copy the position
         self.mpRefKF = pRefKF  # Reference KeyFrame
         self.mpMap = pMap  # Map reference
@@ -35,6 +42,8 @@ class MapPoint:
 
         self.mbBad = False  # Flag indicating if this MapPoint is bad
         self.mpReplaced = None  # Pointer to replaced MapPoint
+        self.mObservations = {}  # Pointer to replaced MapPoint
+
         self.mfMinDistance = 0  # Minimum distance to the camera
         self.mfMaxDistance = 0  # Maximum distance to the camera
 
@@ -42,32 +51,37 @@ class MapPoint:
 
         # Assign a unique ID with thread safety# Important --------------------------------------------------------
         self.mnId = MapPoint.nNextId
-        self.mObservations = {}
-
-        MapPoint.nNextId += 1
-
+        with mpMap.mMutexPointCreation:
+            MapPoint.nNextId += 1
 
     def set_world_pos(self, Pos):
-        self.mWorldPos = Pos.copy()
+
+    with self.mGlobalMutex:
+        with self.mMutexPos:
+            self.mWorldPos = Pos.copy()
 
     def get_world_pos(self):
-        return self.mWorldPos.copy()
+        with self.mMutexPos:
+            return self.mWorldPos.copy()
 
     def get_normal(self):
-        return self.mNormalVector.copy()
+        with self.mMutexPos:
+            return self.mNormalVector.copy()
 
     def get_reference_key_frame(self):
-        return self.mpRefKF
+        with self.mMutexFeatures:
+            return self.mpRefKF
 
     def add_observation(self, pKF, idx):
-        if pKF in self.mObservations:
-            return
+        with self.mMutexFeatures:
+            if pKF in self.mObservations:
+                return
 
-        self.mObservations[pKF] = idx
-        if pKF.mvuRight[idx] >= 0:
-            self.nObs += 2
-        else:
-            self.nObs += 1
+            self.mObservations[pKF] = idx
+            if pKF.mvuRight[idx] >= 0:
+                self.nObs += 2
+            else:
+                self.nObs += 1
     def erase_observation(self, pKF):
         bBad = False
         with self.mMutexFeatures:
@@ -90,10 +104,23 @@ class MapPoint:
         if bBad:
             self.set_bad_flag()
 
+    def get_observations():
+        with self.mMutexFeatures:
+            return self.mObservations.copy()
+
+    def observation():
+        with self.mMutexFeatures:
+            return self.nObs
+
+
     def set_bad_flag(self):
-        self.mbBad = True
-        obs = self.mObservations.copy()
-        self.mObservations.clear()
+
+        with self.mMutexFeatures:
+            with self.mMutexPos:
+
+                self.mbBad = True
+                obs = self.mObservations.copy()
+                self.mObservations.clear()
 
         for pKF, idx in obs.items():
             pKF.erase_map_point_match(idx)
@@ -101,19 +128,22 @@ class MapPoint:
         self.mpMap.erase_map_point(self)
 
     def get_replaced(self):
-        return self.mpReplaced
+        with self.mMutexFeatures:
+            with self.mMutexPos:
+                return self.mpReplaced
 
     def replace(self, pMP):
         if pMP.mnId == self.mnId:
             return
 
-        with self.mMutexFeatures, self.mMutexPos:
-            obs = self.mObservations.copy()
-            self.mObservations.clear()
-            self.mbBad = True
-            nvisible = self.mnVisible
-            nfound = self.mnFound
-            self.mpReplaced = pMP
+        with self.mMutexFeatures:
+            with self.mMutexPos:
+                obs = self.mObservations.copy()
+                self.mObservations.clear()
+                self.mbBad = True
+                nvisible = self.mnVisible
+                nfound = self.mnFound
+                self.mpReplaced = pMP
 
         # Update KeyFrames to replace this MapPoint with the new one
         for pKF, idx in obs.items():
@@ -135,29 +165,36 @@ class MapPoint:
 
 
     def is_bad(self):
-        return self.mbBad
+        with self.mMutexFeatures:
+            with self.mMutexPos:
+                return self.mbBad
 
     def increase_visible(self, n):
-        self.mnVisible += n
+        with self.mMutexFeatures:
+            self.mnVisible += n
 
     def increase_found(self, n):
-        self.mnFound += n
+        with self.mMutexFeatures:
+            self.mnFound += n
 
     def get_found_ratio(self):
-        if self.mnVisible > 0:
-            return float(self.mnFound) / self.mnVisible
-        else:
-            return 0.0
+        with self.mMutexFeatures:
+            if self.mnVisible > 0:
+                return float(self.mnFound) / self.mnVisible
+            else:
+                return 0.0
 
     def compute_distinctive_descriptors(self):
         """
         Computes the distinctive descriptor for the MapPoint based on the median distance
         to other descriptors.
         """
-        if self.mbBad:
-            return
+        with self.mMutexFeatures:
 
-        observations = self.mObservations.copy()
+            if self.mbBad:
+                return
+            observations = self.mObservations.copy()
+
         if not observations:
             return
 
@@ -187,26 +224,35 @@ class MapPoint:
                 BestMedian = median
                 BestIdx = i
 
-        self.mDescriptor = vDescriptors[BestIdx]
+        with self.mMutexFeatures:
+            ss_mappoint["mDescriptor"] = vDescriptors[BestIdx]
 
     def get_descriptor(self):
-        return self.mDescriptor.copy() if self.mDescriptor is not None else None
+        with self.mMutexFeatures:
+            return ss_mappoint["mDescriptor"].copy() if ss_mappoint["mDescriptor"] is not None else None
 
     def get_index_in_key_frame(self, pKF):
-        return self.mObservations.get(pKF, -1)
+        with self.mMutexFeatures:
+            if (len(self.mObservations) > 0):
+                return self.mObservations[pKF], -1)
+            else
+                return -1
 
     def is_in_key_frame(self, pKF):
-        return pKF in self.mObservations
+        with self.mMutexFeatures:
+            return pKF in self.mObservations
 
     def update_normal_and_depth(self):
         """
         Updates the normal vector and depth range of the MapPoint based on its observations.
         """
-        if self.mbBad:
-            return
-        observations = self.mObservations.copy()
-        pRefKF = self.mpRefKF
-        Pos = self.mWorldPos.copy()
+        with self.mMutexFeatures:
+            with self.mMutexPos:
+                if self.mbBad:
+                    return
+                observations = self.mObservations.copy()
+                pRefKF = self.mpRefKF
+                Pos = self.mWorldPos.copy()
 
         if not observations:
             return
@@ -225,21 +271,27 @@ class MapPoint:
         level_scale_factor = pRefKF.mvScaleFactors[level]
         n_levels = pRefKF.mnScaleLevels
 
-        self.mfMaxDistance = dist * level_scale_factor
-        self.mfMinDistance = self.mfMaxDistance / pRefKF.mvScaleFactors[n_levels - 1]
-        self.mNormalVector = normal / n
+        with self.mMutexPos:
+
+            self.mfMaxDistance = dist * level_scale_factor
+            self.mfMinDistance = self.mfMaxDistance / pRefKF.mvScaleFactors[n_levels - 1]
+            self.mNormalVector = normal / n
 
     def get_min_distance_invariance(self):
-        return 0.8 * self.mfMinDistance
+        with self.mMutexPos:
+            return 0.8 * self.mfMinDistance
 
     def get_max_distance_invariance(self):
-        return 1.2 * self.mfMaxDistance
+        with self.mMutexPos:
+            return 1.2 * self.mfMaxDistance
 
-    def predict_scale(self, current_dist, pKF_or_pF):
-        ratio = self.mfMaxDistance / current_dist
+    def predict_scale(self, current_dist, pKF): # there  is another predict_scale which takes the frame
 
-        nScale = int(np.ceil(np.log(ratio) / pKF_or_pF.mfLogScaleFactor))
-        nScale = max(0, min(nScale, pKF_or_pF.mnScaleLevels - 1))
+        with self.mMutexPos:
+            ratio = self.mfMaxDistance / current_dist
+
+        nScale = int(np.ceil(np.log(ratio) / pKF.mfLogScaleFactor))
+        nScale = max(0, min(nScale, pKF.mnScaleLevels - 1))
 
         return nScale
 

@@ -1,6 +1,8 @@
+import threading
+import math
+
 import numpy as np
 import cv2
-import math
 from ORBMatcher import ORBMatcher
 from Convertor import Convertor
 
@@ -58,8 +60,13 @@ class Frame:
         #if mTcw is not None:
 	        #    self.set_pose(mTcw)
 
-        self.mvKeys, self.mDescriptors = self.mpORBextractorLeft.operator(mleft)
-        self.mvKeysRight, self.mDescriptorsRight = self.mpORBextractorRight.operator(mright)
+        threadLeft = threading.Thread(target=self.ExtractORB, args=(0, mleft))
+        threadRight = threading.Thread(target=self.ExtractORB, args=(1, mright))
+        threadLeft.start()
+        threadRight.start()
+        threadLeft.join()
+        threadRight.join()
+
         self.N = len(self.mvKeys)
 
         self.undistort_keypoints()
@@ -75,7 +82,14 @@ class Frame:
         self.mnId = Frame.nNextId
         Frame.nNextId += 1
 
-    def ComputeBoW(self):
+    def ExtractORB(self, flag, image):
+        if flag == 0:
+            self.mvKeys, self.mDescriptors = self.mpORBextractorLeft.operator(image)
+
+        elif flag == 1:
+            self.mvKeysRight, self.mDescriptorsRight = self.mpORBextractorRight.operator(image)
+
+    def Compute_BoW(self):
 
         if self.mBoWVec is None:
             vCurrentDesc = Convertor.to_descriptor_vector(self.mDescriptors)
@@ -411,7 +425,7 @@ if __name__ == "__main__":
     mTcw[2, 3] = 1.0
 
 
-    mFrame = Frame(mleft, mright, timestamp, mORBExtractorLeft, mORBExtractorRight, vocabulary, mk, mDistCoef, mbf, mThDepth, mTcw, frame_args, nNextId=0)
+    mFrame = Frame(mleft, mright, timestamp, mORBExtractorLeft, mORBExtractorRight, vocabulary, mk, mDistCoef, mbf, mThDepth, mTcw, frame_args)
 
 
 
