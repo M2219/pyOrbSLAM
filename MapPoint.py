@@ -1,8 +1,6 @@
 import threading
 import numpy as np
 
-from Map import ss_map
-
 class MapPoint:
     nNextId = 0  # Class-level variable for unique MapPoint IDs
 
@@ -51,14 +49,14 @@ class MapPoint:
 
         # Assign a unique ID with thread safety# Important --------------------------------------------------------
         self.mnId = MapPoint.nNextId
-        with mpMap.mMutexPointCreation:
+        with self.mpMap.mMutexPointCreation:
             MapPoint.nNextId += 1
 
     def set_world_pos(self, Pos):
 
-    with self.mGlobalMutex:
-        with self.mMutexPos:
-            self.mWorldPos = Pos.copy()
+        with self.mGlobalMutex:
+            with self.mMutexPos:
+                self.mWorldPos = Pos.copy()
 
     def get_world_pos(self):
         with self.mMutexPos:
@@ -82,6 +80,7 @@ class MapPoint:
                 self.nObs += 2
             else:
                 self.nObs += 1
+
     def erase_observation(self, pKF):
         bBad = False
         with self.mMutexFeatures:
@@ -225,18 +224,15 @@ class MapPoint:
                 BestIdx = i
 
         with self.mMutexFeatures:
-            ss_mappoint["mDescriptor"] = vDescriptors[BestIdx]
+            self.mDescriptor = vDescriptors[BestIdx].copy()
 
     def get_descriptor(self):
         with self.mMutexFeatures:
-            return ss_mappoint["mDescriptor"].copy() if ss_mappoint["mDescriptor"] is not None else None
+            return self.mDescriptor.copy() if self.mDescriptor is not None else None
 
     def get_index_in_key_frame(self, pKF):
         with self.mMutexFeatures:
-            if (len(self.mObservations) > 0):
-                return self.mObservations[pKF], -1)
-            else
-                return -1
+            return self.mObservations.get(pKF, -1)
 
     def is_in_key_frame(self, pKF):
         with self.mMutexFeatures:
@@ -250,7 +246,7 @@ class MapPoint:
             with self.mMutexPos:
                 if self.mbBad:
                     return
-                observations = self.mObservations.copy()
+                observations = self.mObservations
                 pRefKF = self.mpRefKF
                 Pos = self.mWorldPos.copy()
 
@@ -261,7 +257,7 @@ class MapPoint:
         n = 0
         for pKF, idx in observations.items():
             Owi = pKF.get_camera_center()
-            normali = Pos - Owi
+            normali = self.mWorldPos - Owi
             normal += normali / np.linalg.norm(normali)
             n += 1
 

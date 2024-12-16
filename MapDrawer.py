@@ -7,7 +7,7 @@ import numpy as np
 class MapDrawer:
     def __init__(self, pMap, fSettings):
 
-        self.mMutexCamera = threading.lock()
+        self.mMutexCamera = threading.Lock()
 
         self.mKeyFrameSize = fSettings["Viewer.KeyFrameSize"]
         self.mKeyFrameLineWidth = fSettings["Viewer.KeyFrameLineWidth"]
@@ -23,7 +23,7 @@ class MapDrawer:
         self.mCameraLineWidth = 1.0
         self.mCameraPose = None
 
-    def DrawMapPoints(self):
+    def draw_map_points(self):
         # Retrieve map points and reference map points
         vpMPs = self.mpMap.GetAllMapPoints()
         vpRefMPs = self.mpMap.GetReferenceMapPoints()
@@ -61,7 +61,7 @@ class MapDrawer:
 
 
 
-    def DrawKeyFrames(self, bDrawKF=True, bDrawGraph=True):
+    def draw_key_frames(self, bDrawKF=True, bDrawGraph=True):
         w = self.mKeyFrameSize
         h = w * 0.75
         z = w * 0.6
@@ -132,7 +132,7 @@ class MapDrawer:
 
             gl.glEnd()
 
-    def DrawCurrentCamera(self, Twc):
+    def draw_current_camera(self, Twc):
         """
         Draw the current camera in the scene.
         Parameters:
@@ -177,7 +177,7 @@ class MapDrawer:
 
         gl.glPopMatrix()
 
-    def SetCurrentCameraPose(self, Tcw):
+    def set_current_camera_pose(self, Tcw):
         """
         Set the current camera pose.
         Parameters:
@@ -186,7 +186,7 @@ class MapDrawer:
         with self.mMutexCamera:
             self.mCameraPose = np.copy(Tcw)  # Clone the matrix
 
-    def GetCurrentOpenGLCameraMatrix(self, M):
+    def get_current_OpenGL_camera_matrix(self, M):
         """
         Get the current camera pose in OpenGL format.
 

@@ -3,21 +3,18 @@ import math
 
 import numpy as np
 import cv2
-from ORBMatcher import ORBMatcher
+from ORBMatcher import TH_HIGH, TH_LOW, HISTO_LENGTH
+
 from Convertor import Convertor
 
 class Frame:
 
     nNextId = 0
     def __init__(self, mleft, mright, timestamp, mpORBextractorLeft, mpORBextractorRight,
-                   mpVocabulary, mK, mDistCoef, mbf, mThDepth, mTcw, frame_args):
-
-        self.mTcw = mTcw
-
-        if self.mTcw is not None:
-            self.set_pose(self.mTcw)
+                   mpVocabulary, mK, mDistCoef, mbf, mThDepth, frame_args):
 
         # self.args = args
+        self.frame_args = frame_args
         self.fx = frame_args[0]
         self.fy = frame_args[1]
         self.cx = frame_args[2]
@@ -55,10 +52,9 @@ class Frame:
         self.mvLevelSigma2 = mpORBextractorLeft.mvLevelSigma2
         self.mvInvLevelSigma2 = mpORBextractorLeft.mvInvLevelSigma2
 
-        self.mb = self.mbf / self.mK[0][0]
+        self.mpReferenceKF = None
 
-        #if mTcw is not None:
-	        #    self.set_pose(mTcw)
+        self.mb = self.mbf / self.mK[0][0]
 
         threadLeft = threading.Thread(target=self.ExtractORB, args=(0, mleft))
         threadRight = threading.Thread(target=self.ExtractORB, args=(1, mright))
@@ -70,8 +66,6 @@ class Frame:
         self.N = len(self.mvKeys)
 
         self.undistort_keypoints()
-
-        self.ORBM = ORBMatcher()
         self.compute_stereo_matches()
 
         self.mvpMapPoints = {}
@@ -82,6 +76,44 @@ class Frame:
         self.mnId = Frame.nNextId
         Frame.nNextId += 1
 
+    def copy(self, frame):
+        new_frame = Frame(self.mleft, self.mright, self.mTimeStamp, self.mpORBextractorLeft, self.mpORBextractorRight,
+                           self.mpORBvocabulary, self.mK, self.mDistCoef, self.mbf, self.mThDepth, self.frame_args)
+        new_frame.mpORBvocabulary = frame.mpORBvocabulary
+        new_frame.mpORBextractorLeft = frame.mpORBextractorLeft
+        new_frame.mpORBextractorRight = frame.mpORBextractorRight
+        new_frame.mTimeStamp = frame.mTimeStamp
+        new_frame.mK = frame.mK.copy()
+        new_frame.mDistCoef = frame.mDistCoef.copy()
+        new_frame.mbf = frame.mbf
+        new_frame.mThDepth = frame.mThDepth
+        new_frame.N = frame.N
+        new_frame.mvKeys = frame.mvKeys
+        new_frame.mvKeysRight = frame.mvKeysRight
+        new_frame.mvKeysUn = frame.mvKeysUn
+        new_frame.mvuRight = frame.mvuRight
+        new_frame.mvDepth = frame.mvDepth
+        new_frame.mBowVec = frame.mBowVec
+        new_frame.mFeatVec = frame.mFeatVec
+        new_frame.mDescriptors = frame.mDescriptors.copy()
+        new_frame.mDescriptorsRight = frame.mDescriptorsRight.copy()
+        new_frame.mvpMapPoints = frame.mvpMapPoints
+        new_frame.mvbOutlier = frame.mvbOutlier
+        new_frame.mnId = frame.mnId
+        new_frame.mpReferenceKF = frame.mpReferenceKF
+        new_frame.mnScaleLevels = frame.mnScaleLevels
+        new_frame.mfScaleFactor = frame.mfScaleFactor
+        new_frame.mfLogScaleFactor = frame.mfLogScaleFactor
+        new_frame.mvScaleFactors = frame.mvScaleFactors
+        new_frame.mvInvScaleFactors = frame.mvInvScaleFactors
+        new_frame.mvLevelSigma2 = frame.mvLevelSigma2
+        new_frame.mvInvLevelSigma2 = frame.mvInvLevelSigma2
+
+        if frame.mTcw is not None:
+            new_frame.set_pose(frame.mTcw)
+
+        return new_frame
+
     def ExtractORB(self, flag, image):
         if flag == 0:
             self.mvKeys, self.mDescriptors = self.mpORBextractorLeft.operator(image)
@@ -89,11 +121,9 @@ class Frame:
         elif flag == 1:
             self.mvKeysRight, self.mDescriptorsRight = self.mpORBextractorRight.operator(image)
 
-    def Compute_BoW(self):
+    def compute_BoW(self):
 
-        if self.mBoWVec is None:
-            vCurrentDesc = Convertor.to_descriptor_vector(self.mDescriptors)
-            self.mBowVec, self.mFeatVec = self.mpORBvocabulary.transform(vCurrentDesc, 4)
+         self.mBowVec, self.mFeatVec = self.mpORBvocabulary.transform(self.mDescriptors, 4)
 
 
     def set_pose(self, Tcw_):
@@ -111,7 +141,6 @@ class Frame:
         posX = round((kp.pt[0] - self.mnMinX) * self.mfGridElementWidthInv)
         posY = round((kp.pt[1] - self.mnMinY) * self.mfGridElementHeightInv)
 
-        # Ensure the keypoint is within the grid bounds
         if posX < 0 or posX >= self.FRAME_GRID_COLS or posY < 0 or posY >= self.FRAME_GRID_ROWS:
             return False, None, None
 
@@ -133,7 +162,7 @@ class Frame:
         self.mvuRight = [0] * self.N
         self.mvDepth = [-1] * self.N
 
-        thOrbDist = (self.ORBM.TH_HIGH  + self.ORBM.TH_LOW)/2;
+        thOrbDist = (TH_HIGH  + TH_LOW)/2;
         nRows = self.mpORBextractorLeft.mvImagePyramid[0].shape[0]
         Nr = len(self.mvKeysRight)
 
@@ -171,7 +200,7 @@ class Frame:
             if maxU < 0:
                 continue
 
-            bestDist = self.ORBM.TH_HIGH
+            bestDist = TH_HIGH
             bestIdxR = 0
 
             dL = self.mDescriptors[iL][:]
@@ -185,7 +214,7 @@ class Frame:
                 uR = kpR.pt[0]
                 if minU <= uR <= maxU:
                     dR = self.mDescriptorsRight[iC]
-                    dist = self.ORBM.descriptor_distance(dL, dR)
+                    dist = self.descriptor_distance(dL, dR)
                     if dist < bestDist:
                         bestDist = dist
                         bestIdxR = iC
@@ -295,6 +324,11 @@ class Frame:
             mvKeysUn.append(new_kp)
 
         return mvKeysUn
+
+    def descriptor_distance(self, a, b):
+        xor = np.bitwise_xor(a, b)
+        return sum(bin(byte).count('1') for byte in xor)
+
 
 def compute_image_bounds(imLeft, mK, mDistCoef):
 
@@ -425,9 +459,8 @@ if __name__ == "__main__":
     mTcw[2, 3] = 1.0
 
 
-    mFrame = Frame(mleft, mright, timestamp, mORBExtractorLeft, mORBExtractorRight, vocabulary, mk, mDistCoef, mbf, mThDepth, mTcw, frame_args)
+    mFrame = Frame(mleft, mright, timestamp, mORBExtractorLeft, mORBExtractorRight, vocabulary, mk, mDistCoef, mbf, mThDepth, frame_args)
 
-
-
-
+    for k, v in mFrame.mFeatVec.items():
+        print("featurevec", len(v))
 

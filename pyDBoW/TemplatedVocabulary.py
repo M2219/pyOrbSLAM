@@ -118,8 +118,10 @@ class TemplatedVocabulary:
         fv = FeatureVector()
         mustNormalize = True
         node_id = 0
-        for i, feature in enumerate(features):
-            word_id, node_id, weight = self.transform_feature(feature, node_id, levels_up)
+        #for j in range(features.shape[1]):
+
+        for i in range(features.shape[0]):
+            word_id, node_id, weight = self.transform_feature(features[i], node_id, levels_up)
             if weight > 0:
                 bv.add_weight(word_id, weight)
                 fv.add_feature(node_id, i)
@@ -127,7 +129,7 @@ class TemplatedVocabulary:
         if mustNormalize:
             bv.normalize(norm_type="L1")
 
-        return bv, fv
+        return bv.word_weights, fv.data
 
     def transform_feature(self, feature, nid,  levels_up):
         """

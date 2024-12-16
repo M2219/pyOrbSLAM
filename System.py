@@ -44,12 +44,13 @@ class System:
 
         ss = {
 
-             "pKF_ss": None, "pKF_ss_lock" : threading.lock,
+             "pKF_ss": None, "pKF_ss_lock" : threading.Lock(),
 
              }
 
 
-        self.mpTracker = Tracking(self, self.mpVocabulary, self.mpFrameDrawer, self.mpMapDrawer,
+        #check that System.reset() is False at the start
+        self.mpTracker = Tracking(System.reset(), self.mpVocabulary, self.mpFrameDrawer, self.mpMapDrawer,
                                   self.mpMap, self.mpKeyFrameDatabase, fsSettings, self.mSensor, ss)
 
         self.mpLocalMapper = LocalMapping(self.mpMap, "MONOCULAR", ss=ss)
@@ -75,3 +76,9 @@ class System:
 
         #self.mpTracker.set_viewer(self.mpViewer)
 
+    def reset(self):
+        """
+        Requests a system reset in a thread-safe manner.
+        """
+        with self.mMutexReset:
+            self.mbReset = True

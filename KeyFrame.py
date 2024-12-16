@@ -119,8 +119,7 @@ class KeyFrame:
 
     def compute_BoW(self):
 
-        vCurrentDesc = Convertor.to_descriptor_vector(self.F.mDescriptorsLeft)
-        self.mBowVec, self.mFeatVec = self.mpORBvocabulary.transform(vCurrentDesc, 4)
+        self.mBowVec, self.mFeatVec = self.mpORBvocabulary.transform(self.F.mDescriptorsLeft, 4)
 
     def get_pose_inverse(self):
         with self.mMutexPose:
@@ -266,9 +265,9 @@ class KeyFrame:
         else:
             return self.mvpOrderedConnectedKeyFrames[:n]
 
-    def add_map_point(self, pMP, idx):
+    def add_map_point(self, pMP, indx):
         with self.mMutexFeatures:
-            self.mvpMapPoints[idx] = pMP
+            self.mvpMapPoints[indx] = pMP
 
     def erase_map_point_match_by_index(self, idx):
         with self.mMutexFeatures:
