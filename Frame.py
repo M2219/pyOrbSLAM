@@ -5,8 +5,6 @@ import numpy as np
 import cv2
 from ORBMatcher import TH_HIGH, TH_LOW, HISTO_LENGTH
 
-from Convertor import Convertor
-
 class Frame:
 
     nNextId = 0
@@ -69,7 +67,7 @@ class Frame:
         self.compute_stereo_matches()
 
         self.mvpMapPoints = {}
-        self.mvbOutlier = []
+        self.mvbOutlier = {}
 
         self.assign_features_to_grid()
 

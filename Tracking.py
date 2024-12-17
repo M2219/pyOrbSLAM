@@ -6,9 +6,10 @@ from copy import deepcopy
 
 from Frame import Frame
 from KeyFrame import KeyFrame
-from MapPoint import MapPoint
 from ORBExtractor import ORBExtractor
 from ORBMatcher import ORBMatcher
+from Optimizer import Optimizer
+from MapPoint import MapPoint
 
 class Tracking:
     def __init__(self, pSys, pVoc, pFrameDrawer, pMapDrawer, pMap, pKFDB, fSettings, sensor, ss):
@@ -71,6 +72,8 @@ class Tracking:
         self.mpORBExtractorLeft = ORBExtractor(nFeatures, fScaleFactor, nLevels, fIniThFAST, fMinThFAST)
         self.mpORBExtractorRight = ORBExtractor(nFeatures, fScaleFactor, nLevels, fIniThFAST, fMinThFAST)
         self.mThDepth = self.mbf * fSettings["ThDepth"] / self.fx
+
+        self.optimizer = Optimizer()
 
 
     def grab_image_stereo(self, mImGray, imGrayRight, timestamp):
@@ -164,6 +167,7 @@ class Tracking:
                 if not self.mbOnlyTracking:
                     if self.mState == "OK":
                         # Check replaced MapPoints in the last frame
+
                         self.check_replaced_in_last_frame()
 
                         if not self.mVelocity or self.mCurrentFrame.mnId < self.mnLastRelocFrameId + 2:
@@ -305,15 +309,14 @@ class Tracking:
                 z = self.mCurrentFrame.mvDepth[i]
                 if z > 0:
                     x3D = self.mCurrentFrame.unproject_stereo(i)
-                    pNewMP = MapPoint(x3D, pKFini, self.mpMap)
-                    pNewMP.add_observation(pKFini, i)
-                    pKFini.add_map_point(pNewMP, i)
-                    pNewMP.compute_distinctive_descriptors()
-                    pNewMP.update_normal_and_depth()
-                    self.mpMap.add_map_point(pNewMP)
-                    self.mCurrentFrame.mvpMapPoints[i] = pNewMP
+                    self.pNewMP = MapPoint(x3D, pKFini, self.mpMap)
+                    self.pNewMP.add_observation(pKFini, i)
+                    pKFini.add_map_point(self.pNewMP, i)
+                    self.pNewMP.compute_distinctive_descriptors()
+                    self.pNewMP.update_normal_and_depth()
+                    self.mpMap.add_map_point(self.pNewMP)
+                    self.mCurrentFrame.mvpMapPoints[i] = self.pNewMP
                     self.indx.append(i)
-
 
             print(f"New map created with {self.mpMap.map_points_in_map()} points")
 
@@ -339,6 +342,8 @@ class Tracking:
             # Set state to OK
             self.mState = "OK"
 
+            print("----->", len(self.mCurrentFrame.mvpMapPoints))
+
     def check_replaced_in_last_frame(self):
         """
         Update replaced map points in the last frame with their replacements.
@@ -362,18 +367,17 @@ class Tracking:
         # Perform ORB matching with the reference keyframe
         # If enough matches are found, setup a PnP solver
         matcher = ORBMatcher(0.7, True)
-        vp_map_point_matches = []
 
-        nmatches = matcher.search_by_BoW(self.mpReferenceKF, self.mCurrentFrame, vp_map_point_matches)
+        nmatches, vpMapPointMatches = matcher.search_by_BoW(self.mpReferenceKF, self.mCurrentFrame)
 
         if nmatches < 15:
             return False
 
-        self.mCurrentFrame.mvpMapPoints = vp_map_point_matches
+        self.mCurrentFrame.mvpMapPoints = vpMapPointMatches
         self.mCurrentFrame.set_pose(self.mLastFrame.mTcw)
 
         # Optimize the pose
-        Optimizer.pose_optimization(self.mCurrentFrame)
+        self.optimizer.pose_optimization(self.mCurrentFrame, self.indx)
 
         # Discard outliers
         nmatches_map = 0

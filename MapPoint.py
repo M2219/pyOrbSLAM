@@ -3,6 +3,7 @@ import numpy as np
 
 class MapPoint:
     nNextId = 0  # Class-level variable for unique MapPoint IDs
+    mGlobalMutex = threading.Lock()
 
     def __init__(self, Pos, pRefKF, pMap):
         """
@@ -13,7 +14,6 @@ class MapPoint:
             pRefKF (KeyFrame): Reference KeyFrame.
             pMap (Map): The map to which this MapPoint belongs.
         """
-        self.mGlobalMutex = threading.Lock()
         self.mMutexPos = threading.Lock()
         self.mMutexFeatures = threading.Lock()
 

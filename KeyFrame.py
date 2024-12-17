@@ -4,12 +4,6 @@ import math
 import numpy as np
 import cv2
 
-from ORBMatcher import ORBMatcher
-from Frame import Frame
-from Map import Map
-from Convertor import Convertor
-from MapPoint import MapPoint
-
 class KeyFrame:
     nNextId = 0  # Class-level variable for unique KeyFrame IDs
 

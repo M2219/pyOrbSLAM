@@ -20,7 +20,7 @@ class ORBMatcher:
         indices = np.argsort(histo_counts)[::-1][:3]  # Top 3 indices
         return indices
 
-    def search_by_BoW(self, kf, frame, vpMapPointMatches):
+    def search_by_BoW(self, kf, frame):
         vpMapPointsKF = kf.get_map_point_matches()
 
         vpMapPointMatches = {}
@@ -126,7 +126,7 @@ class ORBMatcher:
                     vpMapPointMatches[idx] = None
                     nMatches -= 1
 
-        return nMatches
+        return nMatches, vpMapPointMatches
 
     def search_by_BoW_kf_kf(self, pKF1, pKF2, vpMatches12):
         vKeysUn1 = pKF1.mvKeysUn
