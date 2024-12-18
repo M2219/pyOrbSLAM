@@ -1,0 +1,13 @@
+Preparation
+
+~/workspace/include-what-you-use/mapgen/iwyu-mapgen-qt.py /usr/include/x86_64-linux-gnu/qt5 > /home/goki/workspace/g2o/script/qt5.imp
+
+Using iwyu-tool
+
+export PATH=/home/goki/workspace/include-what-you-use/build/bin:$PATH
+
+~/workspace/include-what-you-use/iwyu_tool.py -p . ../g2o  -- -Xiwyu --mapping_file=/home/goki/workspace/g2o/script/iwyu-mapping.imp 2>&1 | tee /tmp/iwyu.txt
+
+Applying the fixes
+
+~/workspace/include-what-you-use/fix_includes.py --nocomments < /tmp/iwyu.txt
