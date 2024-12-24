@@ -1,4 +1,5 @@
 import threading
+import time
 import numpy as np
 import cv2
 
@@ -12,10 +13,7 @@ from Optimizer import Optimizer
 from MapPoint import MapPoint
 
 class Tracking:
-    def __init__(self, pSys, pVoc, pFrameDrawer, pMapDrawer, pMap, pKFDB, fSettings, sensor, ss):
-
-        self.ss = ss
-
+    def __init__(self, pSys, pVoc, pFrameDrawer, pMapDrawer, pMap, pKFDB, fSettings, sensor):
 
         self.mState = "NO_IMAGES_YET"
         self.mSensor = sensor
@@ -77,6 +75,10 @@ class Tracking:
 
         self.optimizer = Optimizer()
 
+    @property
+    def mpLocalMapper(self):
+
+        return self.mpSystem.mpLocalMapper
 
     def grab_image_stereo(self, mImGray, imGrayRight, timestamp):
         ##############
@@ -253,7 +255,6 @@ class Tracking:
 
 
                     # Delete temporary MapPoints
-                    print("len temporal", len(self.mlpTemporalPoints))
                     for pMP in self.mlpTemporalPoints: # check if it works
                         for i in list(self.mCurrentFrame.mvpMapPoints.keys()):
                             if self.mCurrentFrame.mvpMapPoints[i] == pMP:
@@ -323,8 +324,8 @@ class Tracking:
             print(f"New map created with {self.mpMap.map_points_in_map()} points")
 
             # Insert KeyFrame into the local mapper
-            with self.ss["pKF_ss_lock"]: # check the speed without this lock
-                self.ss["pKF_ss"] = pKFini # transfer insert to the while
+            #with self.mMutexNewKFs: # check the speed without this lock
+            self.mpLocalMapper.insert_key_frame(pKFini) # transfer insert to the while
 
             # Update frame and keyframe references
             self.mLastFrame = self.mCurrentFrame.copy(self.mCurrentFrame)
@@ -343,7 +344,6 @@ class Tracking:
 
             # Set state to OK
             self.mState = "OK"
-
 
     def check_replaced_in_last_frame(self):
         """
@@ -550,12 +550,11 @@ class Tracking:
             return False
 
         # If Local Mapping is frozen by a Loop Closure, do not insert keyframes
-        with self.ss["mbStopped_ss_lock"]:
-            with self.ss["mbStopRequested_ss_lock"]:
-                if ss["mbStopped_ss"] or ss["mbStopRequested_ss"]:
-                    return False
+        if self.mpLocalMapper.is_stopped() or self.mpLocalMapper.stop_requested():
+            return False
 
-        nKFs = mpMap.key_frames_in_map()
+
+        nKFs = self.mpMap.key_frames_in_map()
         # Do not insert keyframes if not enough frames have passed since last relocalization
         if self.mCurrentFrame.mnId < self.mnLastRelocFrameId + self.mMaxFrames and nKFs > self.mMaxFrames:
             return False
@@ -568,8 +567,8 @@ class Tracking:
         nRefMatches = self.mpReferenceKF.tracked_map_points(nMinObs)
 
         # Is Local Mapping accepting keyframes?
-        with self.ss["mbAcceptKeyFrames_ss_lock"]:
-            bLocalMappingIdle = self.ss["mbAcceptKeyFrames_ss"]
+        bLocalMappingIdle = self.mpLocalMapper.accept_key_frames()
+
 
         # Check "close" points being tracked and potential new points
         nNonTrackedClose = 0
@@ -600,14 +599,12 @@ class Tracking:
             if bLocalMappingIdle:
                 return True
             else:
-                with self.ss["mbAbortBA_ss_lock"]:
-                    self.ss["mbAbortBA_ss"] = True
+                self.mpLocalMapper.interrupt_BA();
 
-                with self.ss["len_mlNewKeyFrames_ss_lock"]:
-                    if self.ss["len_mlNewKeyFrames_ss"] < 3:
-                        return True
-                    else:
-                        return False
+                if self.mpLocalMapper.keyframes_in_queue() < 3:
+                    return True
+                else:
+                    return False
         else:
             return False
 
@@ -616,15 +613,8 @@ class Tracking:
         """
         Create and insert a new keyframe into the map.
         """
-        flag = True
-        with self.ss["mbStopped_ss_lock"]:
-            if flag and self.ss["mbStopped_ss"]:
-                st = False
-            else:
-                st = True
-
-            if not st:
-                return
+        if not self.mpLocalMapper.set_not_stop(True):
+            return
 
         # Create a new keyframe
         pKF = KeyFrame(self.mCurrentFrame, self.mpMap, self.mpKeyFrameDB)
@@ -655,12 +645,12 @@ class Tracking:
                     del self.mCurrentFrame.mvpMapPoints[i]
                 if bCreateNew:
                     x3D = self.mCurrentFrame.unproject_stereo(i)
-                    pNewMP = MapPoint(x3D, pKF, mpMap)
+                    pNewMP = MapPoint(x3D, pKF, self.mpMap)
                     pNewMP.add_observation(pKF, i)
                     pKF.add_map_point(pNewMP, i)
                     pNewMP.compute_distinctive_descriptors()
                     pNewMP.update_normal_and_depth()
-                    mpMap.add_map_point(pNewMP)
+                    self.mpMap.add_map_point(pNewMP)
 
                     self.mCurrentFrame.mvpMapPoints[i] = pNewMP
                     nPoints += 1
@@ -671,11 +661,8 @@ class Tracking:
                     break
 
 
-        with self.ss["pKF_ss_lock"]: # check the speed without this lock
-            self.ss["pKF_ss"] = pKF # transfer insert to the while
-
-        with self.ss["mbNotStop_ss_lock"]:
-            self.ss["mbNotStop_ss"] = False
+        self.mpLocalMapper.insert_key_frame(pKF)
+        self.mpLocalMapper.set_not_stop(False)
 
         mnLastKeyFrameId = self.mCurrentFrame.mnId
         mpLastKeyFrame = pKF
@@ -781,6 +768,56 @@ class Tracking:
             if depth > mThDepth and nPoints > 100:
                 break
 
+    def inform_only_tracking(self, flag):
+        self.mbOnlyTracking = flag
+
+    def reset(self):
+        """
+        Reset the entire tracking system, including mapping, loop closing, and database clearing.
+        """
+        print("System Resetting")
+        if mpViewer:
+            mpViewer.request_stop()
+            while not mpViewer.is_stopped():
+                time.sleep(0.003)  # Sleep for 3 milliseconds
+
+        # Reset Local Mapping
+        print("Resetting Local Mapper...")
+        self.mpLocalMapper.request_reset()
+        print("done")
+
+        # Reset Loop Closing
+        print("Resetting Loop Closing...")
+        self.mpLoopClosing.request_reset()
+        print("done")
+
+        # Clear BoW Database
+        print("Resetting Database...")
+        self.mpKeyFrameDB.clear()
+        print("done")
+
+        # Clear Map (erases MapPoints and KeyFrames)
+        self.mpMap.clear()
+
+        # Reset global IDs
+        self.KeyFrame.nNextId = 0
+        self.Frame.nNextId = 0
+        self.mState = "NO_IMAGES_YET"
+
+        # Clear Initializer if it exists
+        #if self.mpInitializer:
+        #    del mpInitializer
+        #    mpInitializer = None
+
+        # Clear tracking-related lists
+        self.mlRelativeFramePoses.clear()
+        self.mlpReferences.clear()
+        self.mlFrameTimes.clear()
+        self.mlbLost.clear()
+
+        if self.mpViewer:
+            self.mpViewer.release()
+
 if __name__ == "__main__":
 
     import yaml
@@ -829,4 +866,5 @@ if __name__ == "__main__":
 
         Twc = mpTracker.grab_image_stereo(mleft, mright, timestamp)
         print(Twc)
+
 

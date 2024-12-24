@@ -103,11 +103,11 @@ class MapPoint:
         if bBad:
             self.set_bad_flag()
 
-    def get_observations():
+    def get_observations(self):
         with self.mMutexFeatures:
             return self.mObservations.copy()
 
-    def observation():
+    def observations(self):
         with self.mMutexFeatures:
             return self.nObs
 
@@ -122,7 +122,7 @@ class MapPoint:
                 self.mObservations.clear()
 
         for pKF, idx in obs.items():
-            pKF.erase_map_point_match(idx)
+            pKF.erase_map_point_match_by_index(idx)
 
         self.mpMap.erase_map_point(self)
 
@@ -168,11 +168,11 @@ class MapPoint:
             with self.mMutexPos:
                 return self.mbBad
 
-    def increase_visible(self, n):
+    def increase_visible(self, n=1):
         with self.mMutexFeatures:
             self.mnVisible += n
 
-    def increase_found(self, n):
+    def increase_found(self, n=1):
         with self.mMutexFeatures:
             self.mnFound += n
 

@@ -4,6 +4,18 @@ import pypangolin as pangolin
 import OpenGL.GL as gl
 import numpy as np
 
+import sys
+import pydoc
+
+def output_help_to_file(filepath, request):
+    f = open(filepath, 'w')
+    sys.stdout = f
+    pydoc.help(request)
+    f.close()
+    sys.stdout = sys.__stdout__
+    return
+
+
 class MapDrawer:
     def __init__(self, pMap, fSettings):
 
@@ -23,10 +35,12 @@ class MapDrawer:
         self.mCameraLineWidth = 1.0
         self.mCameraPose = None
 
+        self.mpMap = pMap
+
     def draw_map_points(self):
         # Retrieve map points and reference map points
-        vpMPs = self.mpMap.GetAllMapPoints()
-        vpRefMPs = self.mpMap.GetReferenceMapPoints()
+        vpMPs = self.mpMap.get_all_map_points()
+        vpRefMPs = self.mpMap.get_reference_map_points()
 
         spRefMPs = set(vpRefMPs)
 
@@ -39,12 +53,13 @@ class MapDrawer:
         gl.glColor3f(0.0, 0.0, 0.0)  # Black color
 
         for mp in vpMPs:
-            if mp.isBad() or mp in spRefMPs:
+            if mp.is_bad() or mp in spRefMPs:
                 continue
-            pos = mp.GetWorldPos()  # Assuming pos is a numpy array
+            pos = mp.get_world_pos()  # Assuming pos is a numpy array
             gl.glVertex3f(pos[0], pos[1], pos[2])
 
         gl.glEnd()
+
 
         # Draw reference map points
         gl.glPointSize(self.mPointSize)
@@ -52,9 +67,9 @@ class MapDrawer:
         gl.glColor3f(1.0, 0.0, 0.0)  # Red color
 
         for mp in spRefMPs:
-            if mp.isBad():
+            if mp.is_bad():
                 continue
-            pos = mp.GetWorldPos()  # Assuming pos is a numpy array
+            pos = mp.get_world_pos()  # Assuming pos is a numpy array
             gl.glVertex3f(pos[0], pos[1], pos[2])
 
         gl.glEnd()
@@ -66,11 +81,11 @@ class MapDrawer:
         h = w * 0.75
         z = w * 0.6
 
-        vpKFs = self.mpMap.GetAllKeyFrames()
+        vpKFs = self.mpMap.get_all_key_frames()
 
         if bDrawKF:
             for pKF in vpKFs:
-                Twc = pKF.GetPoseInverse().T  # Assuming Twc is a numpy array
+                Twc = pKF.get_pose_inverse().T  # Assuming Twc is a numpy array
                 gl.glPushMatrix()
                 gl.glMultMatrixf(Twc.flatten())  # Flatten for OpenGL compatibility
                 gl.glLineWidth(self.mKeyFrameLineWidth)
@@ -104,29 +119,29 @@ class MapDrawer:
 
             for pKF in vpKFs:
                 # Covisibility Graph
-                vCovKFs = pKF.GetCovisiblesByWeight(100)
-                Ow = pKF.GetCameraCenter()  # Assuming Ow is a numpy array
+                vCovKFs = pKF.get_covisibles_by_weight(100)
+                Ow = pKF.get_camera_center()  # Assuming Ow is a numpy array
                 if vCovKFs:
                     for covKF in vCovKFs:
                         if covKF.mnId < pKF.mnId:
                             continue
-                        Ow2 = covKF.GetCameraCenter()
+                        Ow2 = covKF.get_camera_center()
                         gl.glVertex3f(Ow[0], Ow[1], Ow[2])
                         gl.glVertex3f(Ow2[0], Ow2[1], Ow2[2])
 
                 # Spanning tree
-                pParent = pKF.GetParent()
+                pParent = pKF.get_parent()
                 if pParent:
-                    Owp = pParent.GetCameraCenter()
+                    Owp = pParent.get_camera_center()
                     gl.glVertex3f(Ow[0], Ow[1], Ow[2])
                     gl.glVertex3f(Owp[0], Owp[1], Owp[2])
 
                 # Loops
-                sLoopKFs = pKF.GetLoopEdges()
+                sLoopKFs = pKF.get_loop_edges()
                 for loopKF in sLoopKFs:
                     if loopKF.mnId < pKF.mnId:
                         continue
-                    Owl = loopKF.GetCameraCenter()
+                    Owl = loopKF.get_camera_center()
                     gl.glVertex3f(Ow[0], Ow[1], Ow[2])
                     gl.glVertex3f(Owl[0], Owl[1], Owl[2])
 
@@ -145,7 +160,9 @@ class MapDrawer:
         gl.glPushMatrix()
 
         # Apply the camera transformation matrix
-        gl.glMultMatrixd(Twc.m)  # Assuming Twc.m is a flattened matrix compatible with OpenGL
+        #output_help_to_file(r'test.txt', Twc)
+
+        gl.glMultMatrixd(Twc.Matrix().flatten())  # Assuming Twc.m is a flattened matrix compatible with OpenGL
 
         gl.glLineWidth(self.mCameraLineWidth)
         gl.glColor3f(0.0, 1.0, 0.0)  # Green color for the camera
@@ -186,13 +203,18 @@ class MapDrawer:
         with self.mMutexCamera:
             self.mCameraPose = np.copy(Tcw)  # Clone the matrix
 
-    def get_current_OpenGL_camera_matrix(self, M):
+    def get_current_OpenGL_camera_matrix(self):
         """
         Get the current camera pose in OpenGL format.
 
         Parameters:
         - M: pangolin.OpenGlMatrix instance to be updated with the camera pose.
         """
+
+        #output_help_to_file(r'test.txt', M)
+
+        m_Twc = np.eye(4, dtype=np.float32)
+
         if self.mCameraPose is not None:
             with self.mMutexCamera:
                 # Extract rotation and translation
@@ -200,26 +222,27 @@ class MapDrawer:
                 twc = -np.dot(Rwc, self.mCameraPose[:3, 3])  # Translation in world coordinates
 
             # Fill the OpenGL matrix
-            M.m[0] = Rwc[0, 0]
-            M.m[1] = Rwc[1, 0]
-            M.m[2] = Rwc[2, 0]
-            M.m[3] = 0.0
+            m_Twc[0][0] = Rwc[0, 0]
+            m_Twc[0][1] = Rwc[1, 0]
+            m_Twc[0][2] = Rwc[2, 0]
+            m_Twc[0][3] = 0.0
 
-            M.m[4] = Rwc[0, 1]
-            M.m[5] = Rwc[1, 1]
-            M.m[6] = Rwc[2, 1]
-            M.m[7] = 0.0
+            m_Twc[1][0] = Rwc[0, 1]
+            m_Twc[1][1] = Rwc[1, 1]
+            m_Twc[1][2] = Rwc[2, 1]
+            m_Twc[1][3] = 0.0
 
-            M.m[8] = Rwc[0, 2]
-            M.m[9] = Rwc[1, 2]
-            M.m[10] = Rwc[2, 2]
-            M.m[11] = 0.0
+            m_Twc[2][0] = Rwc[0, 2]
+            m_Twc[2][1] = Rwc[1, 2]
+            m_Twc[2][2] = Rwc[2, 2]
+            m_Twc[2][3] = 0.0
 
-            M.m[12] = twc[0]
-            M.m[13] = twc[1]
-            M.m[14] = twc[2]
-            M.m[15] = 1.0
+            m_Twc[3][0] = twc[0]
+            m_Twc[3][1] = twc[1]
+            m_Twc[3][2] = twc[2]
+            m_Twc[3][3] = 1.0
+            return m_Twc
+
         else:
-            M.SetIdentity()  # Set to identity if no pose is set
-
+            return np.eye(4, dtype=np.float32)
 

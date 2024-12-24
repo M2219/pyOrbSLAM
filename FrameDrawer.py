@@ -1,5 +1,6 @@
 import numpy as np
 import threading
+import cv2
 
 class FrameDrawer:
     def __init__(self, pMap):
@@ -7,7 +8,7 @@ class FrameDrawer:
         self.mMutex = threading.Lock()  # Mutex for thread safety
 
         self.mpMap = pMap
-        mstate = "SYSTEM_NOT_READY"
+        self.mstate = "SYSTEM_NOT_READY"
         self.mIm = np.zeros((480, 640, 3), dtype=np.uint8)
         self.mvCurrentKeys = []  # Current frame keypoints
         self.mvIniKeys = []  # Initialization keypoints
@@ -18,7 +19,7 @@ class FrameDrawer:
         self.mnTrackedVO = 0  # Count of tracked visual odometry points
         self.mbOnlyTracking = False  # Mode: Only tracking or SLAM
 
-    def draw_frame(self, mstate):
+    def draw_frame(self):
         """
         Draws the current frame with keypoints, matches, and tracking information.
         """
@@ -32,24 +33,24 @@ class FrameDrawer:
 
         # Copy variables within scoped mutex
         with self.mMutex:
-            state = mstate
-            if mstate == "SYSTEM_NOT_READY":
-                mstate = "NO_IMAGES_YET"
+            state = self.mstate
+            if self.mstate == "SYSTEM_NOT_READY":
+                self.mstate = "NO_IMAGES_YET"
 
             if self.mIm is not None:
                 im = self.mIm.copy()
 
-            if mstate == "NOT_INITIALIZED":
+            if self.mstate == "NOT_INITIALIZED":
                 vCurrentKeys = self.mvCurrentKeys
                 vIniKeys = self.mvIniKeys
                 vMatches = self.mvIniMatches
 
-            elif mstate == "OK":
+            elif self.mstate == "OK":
                 vCurrentKeys = self.mvCurrentKeys
                 vbVO = self.mvbVO
                 vbMap = self.mvbMap
 
-            elif mstate == "LOST":
+            elif self.mstate == "LOST":
                 vCurrentKeys = self.mvCurrentKeys
 
         if im is None:
@@ -86,39 +87,39 @@ class FrameDrawer:
                         self.mnTrackedVO += 1
 
         # Add tracking information
-        imWithInfo = self.DrawTextInfo(im, state)
+        imWithInfo = self.draw_text_info(im, state)
         return imWithInfo
 
-    def draw_text_info(self, im, mstate):
+    def draw_text_info(self, im, nstate):
         """
         Adds text information about the current tracking state to the image.
 
         Parameters:
         - im: The input image (numpy array).
-        - mstate: The tracking state.
+        - nstate: The tracking state.
 
         Returns:
         - imText: The output image with text information added.
         """
         s = ""
 
-        if mstate == "NO_IMAGES_YET":
+        if nstate == "NO_IMAGES_YET":
             s = " WAITING FOR IMAGES"
-        elif mstate == "NOT_INITIALIZED":
+        elif nstate == "NOT_INITIALIZED":
             s = " TRYING TO INITIALIZE "
-        elif mstate == "OK":
+        elif nstate == "OK":
             if not self.mbOnlyTracking:
                 s = "SLAM MODE |  "
             else:
                 s = "LOCALIZATION | "
-            nKFs = self.mpMap.KeyFramesInMap()
-            nMPs = self.mpMap.MapPointsInMap()
+            nKFs = self.mpMap.key_frames_in_map()
+            nMPs = self.mpMap.map_points_in_map()
             s += f"KFs: {nKFs}, MPs: {nMPs}, Matches: {self.mnTracked}"
             if self.mnTrackedVO > 0:
                 s += f", + VO matches: {self.mnTrackedVO}"
-        elif mstate == "LOST":
+        elif nstate == "LOST":
             s = " TRACK LOST. TRYING TO RELOCALIZE "
-        elif mstate == "SYSTEM_NOT_READY":
+        elif nstate == "SYSTEM_NOT_READY":
             s = " LOADING ORB VOCABULARY. PLEASE WAIT..."
 
         # Calculate text size
@@ -164,14 +165,13 @@ class FrameDrawer:
                 #self.mvIniMatches = pTracker.mvIniMatches
             elif pTracker.mLastProcessedState == "OK":
                 # Mark map points and visual odometry points
-                for i in range(N):
-                    pMP = pTracker.mCurrentFrame.mvpMapPoints[i]
+                for i, pMP in pTracker.mCurrentFrame.mvpMapPoints.items():
                     if pMP:
                         if not pTracker.mCurrentFrame.mvbOutlier[i]:  # Not an outlier
-                            if pMP.Observations() > 0:
+                            if list(pMP.get_observations().values())[0] > 0:
                                 self.mvbMap[i] = True  # Map point
                             else:
                                 self.mvbVO[i] = True  # Visual odometry point
 
             # Update tracking state
-            mstate = pTracker.mLastProcessedState
+            self.mstate = pTracker.mLastProcessedState

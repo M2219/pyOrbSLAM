@@ -134,7 +134,13 @@ class Frame:
         self.mtcw = self.mTcw[:3, 3].reshape(3, 1)
         self.mOw = -np.dot(self.mRwc, self.mtcw)
 
-    def PosInGrid(self, kp):
+    def get_camera_center(self):
+        return self.mOw.copy()
+
+    def get_rotation_inverse(self):
+        return self.mRwc.copy()
+
+    def pos_in_grid(self, kp):
 
         posX = round((kp.pt[0] - self.mnMinX) * self.mfGridElementWidthInv)
         posY = round((kp.pt[1] - self.mnMinY) * self.mfGridElementHeightInv)
@@ -146,14 +152,12 @@ class Frame:
 
     def assign_features_to_grid(self):
 
-        mGrid = []
-        mg = np.zeros((self.FRAME_GRID_COLS, self.FRAME_GRID_ROWS), dtype=np.float32)
+        self.mGrid = [[[] for _ in range(self.N)] for _ in range(self.N)]
         for i in range(self.N):
             kp = self.mvKeys[i]
-            bflag, nGridPosX, nGridPosY = self.PosInGrid(kp)
-
+            bflag, nGridPosX, nGridPosY = self.pos_in_grid(kp)
             if bflag:
-                mGrid.append(mg[nGridPosX][nGridPosY])
+                self.mGrid[nGridPosX][nGridPosY].append(i)
 
     def compute_stereo_matches(self):
 
@@ -326,6 +330,129 @@ class Frame:
     def descriptor_distance(self, a, b):
         xor = np.bitwise_xor(a, b)
         return sum(bin(byte).count('1') for byte in xor)
+
+    def is_in_frustum(self, pMP, viewing_cos_limit):
+        """
+        Check if a MapPoint is in the frustum of the current frame.
+
+        Args:
+            pMP (MapPoint): The map point to check.
+            viewing_cos_limit (float): The viewing cosine limit.
+
+        Returns:
+            bool: True if the map point is in the frustum, False otherwise.
+        """
+        pMP.mbTrackInView = False
+
+        # 3D in absolute coordinates
+        P = pMP.get_world_pos()
+
+        # 3D in camera coordinates
+        Pc = self.mRcw @ P + self.mtcw
+        PcX = Pc[0]
+        PcY = Pc[1]
+        PcZ = Pc[2]
+
+        # Check positive depth
+        if PcZ < 0.0:
+            return False
+
+        # Project in image and check it is not outside
+        invz = 1.0 / PcZ
+        u = self.fx * PcX * invz + self.cx
+        v = self.fy * PcY * invz + self.cy
+
+        if u < self.mnMinX or u > self.mnMaxX:
+            return False
+        if v < self.mnMinY or v > self.mnMaxY:
+           return False
+
+        # Check distance is in the scale invariance region of the MapPoint
+        max_distance = pMP.get_max_distance_invariance()
+        min_distance = pMP.get_min_distance_invariance()
+        PO = P - self.mOw
+        dist = np.linalg.norm(PO)
+
+        if dist < min_distance or dist > max_distance:
+            return False
+
+        # Check viewing angle
+        Pn = pMP.get_normal()
+        view_cos = (PO.T).dot(Pn) / dist
+
+        if view_cos[0] < viewing_cos_limit:
+            return False
+
+        # Predict scale in the image
+        n_predicted_level = pMP.predict_scale(dist, self)
+
+        # Data used by the tracking
+        pMP.mbTrackInView = True
+        pMP.mTrackProjX = u
+        pMP.mTrackProjXR = u - self.mbf * invz
+        pMP.mTrackProjY = v
+        pMP.mnTrackScaleLevel = n_predicted_level
+        pMP.mTrackViewCos = view_cos
+        return True
+
+
+    def get_features_in_area(self, x, y, r, min_level, max_level):
+        """
+        Get the indices of features in a specified area and within scale levels.
+
+        Args:
+            x (float): X-coordinate of the center.
+            y (float): Y-coordinate of the center.
+            r (float): Radius around (x, y) to search.
+            min_level (int): Minimum scale level to consider.
+            max_level (int): Maximum scale level to consider.
+
+        Returns:
+            list: Indices of features within the area and scale levels.
+        """
+        v_indices = []
+
+        n_min_cell_x = max(0, int((x - self.mnMinX - r) * self.mfGridElementWidthInv))
+        if n_min_cell_x >= self.FRAME_GRID_COLS:
+            return v_indices
+
+        n_max_cell_x = min(self.FRAME_GRID_COLS - 1, int((x - self.mnMinX + r) * self.mfGridElementWidthInv))
+        if n_max_cell_x < 0:
+            return v_indices
+
+        n_min_cell_y = max(0, int((y - self.mnMinY - r) * self.mfGridElementHeightInv))
+        if n_min_cell_y >= self.FRAME_GRID_ROWS:
+            return v_indices
+
+        n_max_cell_y = min(self.FRAME_GRID_ROWS - 1, int((y - self.mnMinY + r) * self.mfGridElementHeightInv))
+        if n_max_cell_y < 0:
+            return v_indices
+
+        b_check_levels = (min_level > 0) or (max_level >= 0)
+
+        for ix in range(n_min_cell_x, n_max_cell_x + 1):
+            for iy in range(n_min_cell_y, n_max_cell_y + 1):
+
+                v_cell = self.mGrid[ix][iy]
+                if not v_cell:
+                    continue
+
+                for g in v_cell:
+                    kpUn = self.mvKeysUn[g]
+
+                    if b_check_levels:
+                        if kpUn.octave < min_level:
+                            continue
+                        if max_level >= 0 and kpUn.octave > max_level:
+                            continue
+
+                    distx = kpUn.pt[0] - x
+                    disty = kpUn.pt[1] - y
+
+                    if abs(distx) < r and abs(disty) < r:
+                        v_indices.append(g)
+
+        return v_indices
 
 
 def compute_image_bounds(imLeft, mK, mDistCoef):

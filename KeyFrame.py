@@ -33,6 +33,7 @@ class KeyFrame:
         self.mnBAFixedForKF = 0
         self.mnLoopQuery = 0
         self.mnLoopWords = 0
+        self.mspLoopEdges = set()
         self.mnRelocQuery = 0
         self.mnRelocWords = 0
         self.mnBAGlobalForKF = 0
@@ -90,7 +91,7 @@ class KeyFrame:
         self.F = F
 
         self.mConnectedKeyFrameWeights = {}
-
+        self.mvpOrderedConnectedKeyFrames = []
     def set_pose(self, Tcw_):
         with self.mMutexPose:
             self.Tcw = Tcw_.copy()
@@ -113,7 +114,11 @@ class KeyFrame:
 
     def compute_BoW(self):
 
-        self.mBowVec, self.mFeatVec = self.mpORBvocabulary.transform(self.F.mDescriptorsLeft, 4)
+        self.mBowVec, self.mFeatVec = self.mpORBvocabulary.transform(self.F.mDescriptors, 4)
+
+    def get_pose(self):
+        with self.mMutexPose:
+            return self.Tcw.copy()
 
     def get_pose_inverse(self):
         with self.mMutexPose:
@@ -136,7 +141,7 @@ class KeyFrame:
             return self.Tcw[:3, 3].reshape(3, 1).copy()
 
     def update_connections(self):
-        KFcounter = defaultdict(int)
+        KFcounter = {}
         vpMP = []
 
         # Get a copy of the map points
@@ -144,15 +149,20 @@ class KeyFrame:
             vpMP = self.mvpMapPoints.copy()
 
         # Count observations of MapPoints in other KeyFrames
-        for pMP in vpMP:
-            if not pMP or pMP.is_bad():
+        for i, pMP in vpMP.items():
+
+            if pMP.is_bad():
                 continue
 
-            observations = pMP.GetObservations()
+            observations = pMP.get_observations()
             for pKF, _ in observations.items():
                 if pKF.mnId == self.mnId:
                     continue
-                KFcounter[pKF] += 1
+
+                if pKF in KFcounter:
+                    KFcounter[pKF] += 1
+                else:
+                    KFcounter[pKF] = 1
 
         # Return if no connected KeyFrames
         if not KFcounter:
@@ -170,11 +180,11 @@ class KeyFrame:
                 pKFmax = pKF
             if count >= threshold:
                 vPairs.append((count, pKF))
-                pKF.AddConnection(self, count)
+                pKF.add_connection(self, count)
 
         if not vPairs:
             vPairs.append((nmax, pKFmax))
-            pKFmax.AddConnection(self, nmax)
+            pKFmax.add_connection(self, nmax)
 
         # Sort pairs by weight
         vPairs.sort(reverse=True, key=lambda x: x[0])
@@ -184,13 +194,13 @@ class KeyFrame:
         lWs = [pair[0] for pair in vPairs]
 
         with self.mMutexConnections:
-            self.mConnectedKeyFrameWeights = dict(KFcounter)
+            self.mConnectedKeyFrameWeights = KFcounter
             self.mvpOrderedConnectedKeyFrames = lKFs
             self.mvOrderedWeights = lWs
 
             if self.mbFirstConnection and self.mnId != 0:
                 self.mpParent = self.mvpOrderedConnectedKeyFrames[0]
-                self.mpParent.AddChild(self)
+                self.mpParent.add_child(self)
                 self.mbFirstConnection = False
 
     def add_connection(self, pKF, weight):
@@ -278,14 +288,14 @@ class KeyFrame:
 
     def get_map_points(self):
         with self.mMutexFeatures:
-            return {pMP for pMP in self.mvpMapPoints if pMP and not pMP.is_bad()}
+            return {pMP for i, pMP in self.mvpMapPoints.items() if not pMP.is_bad()}
 
     def tracked_map_points(self, minObs):
         with self.mMutexFeatures:
             nPoints = 0
-            for pMP in self.mvpMapPoints:
-                if pMP and not pMP.is_bad():
-                    if minObs > 0 and pMP.Observations() >= minObs:
+            for i, pMP in self.mvpMapPoints.items():
+                if not pMP.is_bad():
+                    if minObs > 0 and list(pMP.get_observations().values())[0] >= minObs:
                         nPoints += 1
                     elif minObs == 0:
                         nPoints += 1
@@ -331,7 +341,7 @@ class KeyFrame:
 
     def get_loop_edges(self):
         with self.mMutexConnections:
-            return set(self.mspLoopEdges)
+            return self.mspLoopEdges
 
     def set_not_erase(self):
         with self.mMutexConnections:
@@ -358,9 +368,8 @@ class KeyFrame:
         for pKF in list(self.mConnectedKeyFrameWeights.keys()):
             pKF.EraseConnection(self)
 
-        for pMP in self.mvpMapPoints:
-            if pMP:
-                pMP.EraseObservation(self)
+        for i, pMP in self.mvpMapPoints:
+            pMP.EraseObservation(self)
 
         with self.mMutexConnections:
             with self.mMutexFeatures:

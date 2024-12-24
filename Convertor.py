@@ -30,3 +30,19 @@ class Convertor:
 
         # Create and return g2o.SE3Quat
         return g2o.SE3Quat(R, t)
+
+    def to_mat(self, SE3):
+        """
+        Convert a g2o.SE3Quat object to a 4x4 transformation matrix (numpy array).
+
+        Args:
+            SE3 (g2o.SE3Quat): SE3 object containing rotation and translation.
+
+        Returns:
+            np.ndarray: 4x4 transformation matrix (homogeneous matrix).
+        """
+        # Convert SE3Quat to a 4x4 homogeneous transformation matrix
+        eig_mat = SE3.to_homogeneous_matrix()
+
+        # Ensure the result is returned as a NumPy array
+        return np.array(eig_mat, dtype=np.float64)

@@ -1,11 +1,8 @@
 class LoopClosing:
-    def __init__(self, pMap, pDB, pVoc, bFixScale, ss):
+    def __init__(self, pMap, pDB, pVoc, bFixScale):
 
 
-        self.ss = ss
         #mutex
-
-
 
         self.mbResetRequested = False
         self.mbFinishRequested = False
