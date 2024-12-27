@@ -166,7 +166,7 @@ class Optimizer:
         """
         # Initialize optimizer
         optimizer = g2o.SparseOptimizer()
-        solver = g2o.BlockSolverSE3(g2o.LinearSolverDenseSE3())
+        solver = g2o.BlockSolverSE3(g2o.LinearSolverEigenSE3())
         algorithm = g2o.OptimizationAlgorithmLevenberg(solver)
         optimizer.set_algorithm(algorithm)
 
@@ -181,22 +181,22 @@ class Optimizer:
 
         # Prepare edge containers
         N = pFrame.N
-        vpEdgesMono = []
-        vnIndexEdgeMono = []
         vpEdgesStereo = []
         vnIndexEdgeStereo = []
 
-        deltaMono = np.sqrt(5.991)
         deltaStereo = np.sqrt(7.815)
 
         # Add edges for map points
         with MapPoint.mGlobalMutex:  # Ensure thread safety
             for i, pMP in pFrame.mvpMapPoints.items():
-                if pMP:
+
+                pFrame.mvbOutlier[i] = False
+
+                if pFrame.mvuRight[i] > 0:
                     nInitialCorrespondences += 1
-                    pFrame.mvbOutlier[i] = False
 
                     obs = np.array([pFrame.mvKeysUn[i].pt[0], pFrame.mvKeysUn[i].pt[1], pFrame.mvuRight[i]])
+                    #print(obs)
                     e = g2o.EdgeStereoSE3ProjectXYZOnlyPose()
                     e.set_vertex(0, optimizer.vertex(0))
                     e.set_measurement(obs)
@@ -219,7 +219,6 @@ class Optimizer:
             return 0
 
         # Perform 4 rounds of optimization
-        chi2Mono = [5.991] * 4
         chi2Stereo = [7.815] * 4
         its = [10] * 4
 
@@ -231,28 +230,13 @@ class Optimizer:
 
             nBad = 0
 
-            for e, idx in zip(vpEdgesMono, vnIndexEdgeMono):
-                if pFrame.mvbOutlier[idx]:
-                    e.compute_error()
-
-                chi2 = e.chi2()
-                if chi2 > chi2Mono[it]:
-                    pFrame.mvbOutlier[idx] = True
-                    e.set_level(1)
-                    nBad += 1
-                else:
-                    pFrame.mvbOutlier[idx] = False
-                    e.set_level(0)
-
-                if it == 2:
-                    e.set_robust_kernel(None)
-
             for e, idx in zip(vpEdgesStereo, vnIndexEdgeStereo):
                 if pFrame.mvbOutlier[idx]:
                     e.compute_error()
 
                 chi2 = e.chi2()
-                if chi2 > chi2Stereo[it]:
+
+                if (chi2 > chi2Stereo[it]) or (pFrame.mvuRight[idx] <= 0):
                     pFrame.mvbOutlier[idx] = True
                     e.set_level(1)
                     nBad += 1

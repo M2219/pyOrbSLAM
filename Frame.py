@@ -1,8 +1,10 @@
 import threading
 import math
+import time
 
 import numpy as np
 import cv2
+
 from ORBMatcher import TH_HIGH, TH_LOW, HISTO_LENGTH
 
 class Frame:
@@ -10,6 +12,7 @@ class Frame:
     nNextId = 0
     def __init__(self, mleft, mright, timestamp, mpORBextractorLeft, mpORBextractorRight,
                    mpVocabulary, mK, mDistCoef, mbf, mThDepth, frame_args):
+
 
         # self.args = args
         self.frame_args = frame_args
@@ -42,37 +45,47 @@ class Frame:
         self.mpORBextractorLeft = mpORBextractorLeft
         self.mpORBextractorRight = mpORBextractorRight
 
-        self.mnScaleLevels = mpORBextractorLeft.nLevels
-        self.mfScaleFactor = mpORBextractorLeft.fScaleFactor
-        self.mfLogScaleFactor = np.log(self.mfScaleFactor)
-        self.mvScaleFactors = mpORBextractorLeft.mvScaleFactor
-        self.mvInvScaleFactors = mpORBextractorLeft.mvInvScaleFactor
-        self.mvLevelSigma2 = mpORBextractorLeft.mvLevelSigma2
-        self.mvInvLevelSigma2 = mpORBextractorLeft.mvInvLevelSigma2
-
         self.mpReferenceKF = None
 
         self.mb = self.mbf / self.mK[0][0]
+        #threadLeft = threading.Thread(target=self.ExtractORB, args=(0, mleft))
+        #threadRight = threading.Thread(target=self.ExtractORB, args=(1, mright))
 
-        threadLeft = threading.Thread(target=self.ExtractORB, args=(0, mleft))
-        threadRight = threading.Thread(target=self.ExtractORB, args=(1, mright))
-        threadLeft.start()
-        threadRight.start()
-        threadLeft.join()
-        threadRight.join()
+        #threadLeft.start()
+        #threadRight.start()
+
+        #threadLeft.join()
+        #threadRight.join()
+
+        self.ExtractORB(0, mleft)
+        self.ExtractORB(1, mright)
+
+        self.mnScaleLevels = mpORBextractorLeft.GetLevels()
+        self.mfScaleFactor = mpORBextractorLeft.GetScaleFactor()
+        self.mfLogScaleFactor = np.log(self.mfScaleFactor)
+        self.mvScaleFactors = mpORBextractorLeft.GetScaleFactors()
+        self.mvInvScaleFactors = mpORBextractorLeft.GetInverseScaleFactors()
+        self.mvLevelSigma2 = mpORBextractorLeft.GetScaleSigmaSquares()
+        self.mvInvLevelSigma2 = mpORBextractorLeft.GetInverseScaleSigmaSquares()
+
+        self.mvImagePyramidLeft = mpORBextractorLeft.GetImagePyramid()
+        self.mvImagePyramidRight = mpORBextractorRight.GetImagePyramid()
 
         self.N = len(self.mvKeys)
 
         self.undistort_keypoints()
         self.compute_stereo_matches()
-
         self.mvpMapPoints = {}
         self.mvbOutlier = {}
+
+        #tt = time.time()
 
         self.assign_features_to_grid()
 
         self.mnId = Frame.nNextId
         Frame.nNextId += 1
+
+        #print("stereo", time.time() - tt)
 
     def copy(self, frame):
         new_frame = Frame(self.mleft, self.mright, self.mTimeStamp, self.mpORBextractorLeft, self.mpORBextractorRight,
@@ -114,10 +127,12 @@ class Frame:
 
     def ExtractORB(self, flag, image):
         if flag == 0:
-            self.mvKeys, self.mDescriptors = self.mpORBextractorLeft.operator(image)
+            self.mvKeys_, self.mDescriptors = self.mpORBextractorLeft.operator_kd(image)
+            self.mvKeys = [cv2.KeyPoint(*kp) for kp in self.mvKeys_]
 
         elif flag == 1:
-            self.mvKeysRight, self.mDescriptorsRight = self.mpORBextractorRight.operator(image)
+            self.mvKeysRight_, self.mDescriptorsRight = self.mpORBextractorRight.operator_kd(image)
+            self.mvKeysRight = [cv2.KeyPoint(*kp) for kp in self.mvKeysRight_]
 
     def compute_BoW(self):
 
@@ -140,6 +155,29 @@ class Frame:
     def get_rotation_inverse(self):
         return self.mRwc.copy()
 
+    def pos_in_grid(self, kps):
+        # Vectorized computation for all keypoints
+        keypoints = np.array([[kp.pt[0], kp.pt[1]] for kp in kps])
+        posX = np.round((keypoints[:, 0] - self.mnMinX) * self.mfGridElementWidthInv).astype(int)
+        posY = np.round((keypoints[:, 1] - self.mnMinY) * self.mfGridElementHeightInv).astype(int)
+
+        # Check bounds
+        valid = (posX >= 0) & (posX < self.FRAME_GRID_COLS) & (posY >= 0) & (posY < self.FRAME_GRID_ROWS)
+
+        return valid, posX, posY
+
+    def assign_features_to_grid(self):
+        # Initialize the grid with empty lists
+        self.mGrid = [[[] for _ in range(self.FRAME_GRID_ROWS)] for _ in range(self.FRAME_GRID_COLS)]
+
+        # Precompute grid positions for all keypoints
+        valid, posX, posY = self.pos_in_grid(self.mvKeys)
+
+        # Assign keypoints to grid cells
+        for i in range(self.N):
+            if valid[i]:
+                self.mGrid[posX[i]][posY[i]].append(i)
+    """
     def pos_in_grid(self, kp):
 
         posX = round((kp.pt[0] - self.mnMinX) * self.mfGridElementWidthInv)
@@ -159,13 +197,14 @@ class Frame:
             if bflag:
                 self.mGrid[nGridPosX][nGridPosY].append(i)
 
+    """
     def compute_stereo_matches(self):
 
         self.mvuRight = [0] * self.N
         self.mvDepth = [-1] * self.N
 
         thOrbDist = (TH_HIGH  + TH_LOW)/2;
-        nRows = self.mpORBextractorLeft.mvImagePyramid[0].shape[0]
+        nRows = self.mvImagePyramidLeft[0].shape[0]
         Nr = len(self.mvKeysRight)
 
         vRowIndices = [[] for _ in range(nRows)]
@@ -232,7 +271,7 @@ class Frame:
                 scaleduR0 = round(uR0 * scaleFactor)
 
                 w = 5
-                IL = self.mpORBextractorLeft.mvImagePyramid[kpL.octave][scaledvL - w:scaledvL + w + 1, scaleduL - w:scaleduL + w + 1]
+                IL = self.mvImagePyramidLeft[kpL.octave][scaledvL - w:scaledvL + w + 1, scaleduL - w:scaleduL + w + 1]
                 IL = IL.astype(np.float32)
                 IL = IL - IL[w, w] * np.ones_like(IL, dtype=np.float32)
 
@@ -243,11 +282,11 @@ class Frame:
 
                 iniu = scaleduR0 + L - w
                 endu = scaleduR0 + L + w + 1
-                if iniu < 0 or endu >= self.mpORBextractorRight.mvImagePyramid[kpL.octave].shape[1]: # check which dimention is cols
+                if iniu < 0 or endu >= self.mvImagePyramidRight[kpL.octave].shape[1]: # check which dimention is cols
                     continue
 
                 for incR in range(-L, L + 1):
-                    IR = self.mpORBextractorRight.mvImagePyramid[kpL.octave][scaledvL - w:scaledvL + w + 1, scaleduR0 + incR - w:scaleduR0 + incR + w + 1]
+                    IR = self.mvImagePyramidRight[kpL.octave][scaledvL - w:scaledvL + w + 1, scaleduR0 + incR - w:scaleduR0 + incR + w + 1]
                     IR = IR.astype(np.float32)
                     IR = IR - IR[w, w] * np.ones_like(IR, dtype=np.float32)
 
@@ -282,6 +321,7 @@ class Frame:
 
                     self.mvDepth[iL] = self.mbf / disparity
                     self.mvuRight[iL] = bestuR
+                    #print(self.mvDepth[iL], self.mvuRight[iL])
                     vDistIdx.append((bestDist, iL))
 
     def unproject_stereo(self, i):
@@ -485,11 +525,15 @@ def compute_image_bounds(imLeft, mK, mDistCoef):
     return mnMinX, mnMaxX, mnMinY, mnMaxY
 
 if __name__ == "__main__":
-
+    import sys
     import yaml
     from pyDBoW.TemplatedVocabulary import TemplatedVocabulary
-    from ORBExtractor import ORBExtractor
     from stereo_kitti import LoadImages
+    import time
+
+    sys.path.append("./pyORBExtractor/lib/")
+    from pyORBExtractor import ORBextractor
+
 
     vocabulary = TemplatedVocabulary(k=5, L=3, weighting="TF_IDF", scoring="L1_NORM")
     vocabulary.load_from_text_file("./Vocabulary/ORBvoc.txt")
@@ -540,8 +584,8 @@ if __name__ == "__main__":
     fIniThFAST = cfg["ORBextractor.iniThFAST"]
     fMinThFAST = cfg["ORBextractor.minThFAST"]
 
-    mORBExtractorLeft = ORBExtractor(nFeatures, fScaleFactor, nLevels, fIniThFAST, fMinThFAST)
-    mORBExtractorRight = ORBExtractor(nFeatures, fScaleFactor, nLevels, fIniThFAST, fMinThFAST)
+    mORBExtractorLeft = ORBextractor(nFeatures, fScaleFactor, nLevels, fIniThFAST, fMinThFAST)
+    mORBExtractorRight = ORBextractor(nFeatures, fScaleFactor, nLevels, fIniThFAST, fMinThFAST)
 
     keypointsL = []
     keypointsL.append(cv2.KeyPoint(x=50.0, y=100.0, size=10.0, angle=45.0, response=0.8, octave=1, class_id=0))
@@ -583,9 +627,10 @@ if __name__ == "__main__":
     mTcw[1, 3] = 0.3
     mTcw[2, 3] = 1.0
 
+    print("start")
+    for i in range(10):
+        t = time.time()
+        mFrame = Frame(mleft, mright, timestamp, mORBExtractorLeft, mORBExtractorRight, vocabulary, mk, mDistCoef, mbf, mThDepth, frame_args)
+        print("time", time.time()-t)
 
-    mFrame = Frame(mleft, mright, timestamp, mORBExtractorLeft, mORBExtractorRight, vocabulary, mk, mDistCoef, mbf, mThDepth, frame_args)
-
-    for k, v in mFrame.mFeatVec.items():
-        print("featurevec", len(v))
 

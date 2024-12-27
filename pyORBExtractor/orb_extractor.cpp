@@ -13,7 +13,6 @@ using namespace pybind11::literals;
 
 using namespace ORB_SLAM2;
 
-
 PYBIND11_MODULE(pyORBExtractor, m)
 {
 
@@ -24,9 +23,11 @@ PYBIND11_MODULE(pyORBExtractor, m)
         .def(py::init<int, float, int, int, int>(),"nfeatures"_a, "scaleFactor"_a, "nlevels"_a, "iniThFAST"_a, "minThFAST"_a)
         .def("GetLevels", &ORBextractor::GetLevels)
         .def("GetScaleFactor", &ORBextractor::GetScaleFactor)
+        .def("GetScaleFactors", &ORBextractor::GetScaleFactors)
         .def("GetInverseScaleFactors", &ORBextractor::GetInverseScaleFactors)
         .def("GetScaleSigmaSquares", &ORBextractor::GetScaleSigmaSquares)
         .def("GetInverseScaleSigmaSquares", &ORBextractor::GetInverseScaleSigmaSquares)
+        .def("GetImagePyramid", &ORBextractor::GetImagePyramid)
         .def("operator_kd", [](ORBextractor& o, cv::Mat& image)
             {
                 cv::Mat mask = cv::Mat();  // input mask is not actually used by the implementation

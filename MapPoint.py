@@ -52,6 +52,10 @@ class MapPoint:
         with self.mpMap.mMutexPointCreation:
             MapPoint.nNextId += 1
 
+    def descriptor_distance(self, a, b):
+        xor = np.bitwise_xor(a, b)
+        return sum(bin(byte).count('1') for byte in xor)
+
     def set_world_pos(self, Pos):
 
         with self.mGlobalMutex:
@@ -210,7 +214,7 @@ class MapPoint:
 
         for i in range(N):
             for j in range(i + 1, N):
-                dist = ORBmatcher.descriptor_distance(vDescriptors[i], vDescriptors[j])
+                dist = self.descriptor_distance(vDescriptors[i], vDescriptors[j])
                 Distances[i, j] = dist
                 Distances[j, i] = dist
 

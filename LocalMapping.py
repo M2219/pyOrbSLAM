@@ -40,7 +40,7 @@ class LocalMapping:
         while True:
             # Mark Local Mapping as busy
             self.set_accept_key_frames(False)
-            time.sleep(0.1)
+            time.sleep(0.2)
             print(self.mlNewKeyFrames)
             # Check if there are keyframes in the queue
             if self.check_new_key_frames():
@@ -53,21 +53,16 @@ class LocalMapping:
 
                 # Triangulate new MapPoints
                 self.create_new_map_points()
-                print("before neighbors", self.check_new_key_frames())
 
                 if not self.check_new_key_frames():
                     # Search in neighbor keyframes and fuse point duplications
-                    print("search in neighbors")
                     self.search_in_neighbors()
 
                 self.mbAbortBA = False
 
-                print("after neighbors", self.check_new_key_frames())
                 if not self.check_new_key_frames() and not self.stop_requested():
                     # Perform local bundle adjustment
-                    print("keyframe in map", self.mpMap.key_frames_in_map())
                     if self.mpMap.key_frames_in_map() > 2:
-                        print("optimizing")
                         Optimizer.local_bundle_adjustment(self.mpCurrentKeyFrame, self.mbAbortBA, self.mpMap)
 
                     # Cull redundant local keyframes
@@ -375,7 +370,7 @@ class LocalMapping:
             nRedundantObservations = 0
             nMPs = 0
 
-            for i, pMP in vpMapPoints.itesm():
+            for i, pMP in vpMapPoints.items():
                 if not pMP.is_bad():
                     if pKF.mvDepth[i] > pKF.mThDepth or pKF.mvDepth[i] < 0:
                         continue
@@ -423,7 +418,6 @@ class LocalMapping:
         with self.mMutexStop:
             if self.mbStopRequested and not self.mbNotStop:
                 self.mbStopped = True
-                print("Local Mapping STOP")
                 return True
             return False
 
@@ -529,6 +523,5 @@ if __name__ == "__main__":
                 mbReset = False
 
         Twc = mpTracker.grab_image_stereo(mleft, mright, timestamp)
-        print(Twc)
 
     mptLocalMapping_thread.join()

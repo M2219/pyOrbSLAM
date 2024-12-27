@@ -37,6 +37,10 @@ for i in range(N):
     kps2 = [cv2.KeyPoint(*kp) for kp in kps]
     time_array.append(time.time()-start)
 
+pyramid = orb_extractor.GetImagePyramid()
+
+print(len(pyramid))
+print(pyramid[1].shape)
 
 print("time", time.time() - tt)
 

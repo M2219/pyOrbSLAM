@@ -4,6 +4,8 @@ import math
 import numpy as np
 import cv2
 
+from bisect import bisect_right
+
 class KeyFrame:
     nNextId = 0  # Class-level variable for unique KeyFrame IDs
 
@@ -81,6 +83,8 @@ class KeyFrame:
         self.mHalfBaseline = F.mb / 2
         self.mpMap = pMap
 
+        self.mspChildrens = set()
+        self.mspLoopEdges = set()
         # Assign a unique ID
         self.mnId = KeyFrame.nNextId
         KeyFrame.nNextId += 1

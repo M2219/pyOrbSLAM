@@ -17,6 +17,7 @@ class System:
 
         self.mMutexMode = threading.Lock()
         self.mMutexState = threading.Lock()
+        self.mMutexReset = threading.Lock()
 
         self.mSensor = sensor
         self.mpViewer = None
@@ -47,7 +48,7 @@ class System:
         self.mpMapDrawer = MapDrawer(self.mpMap, fsSettings)
 
         self.mpLocalMapper = LocalMapping(self.mpMap)
-        #check that System.reset() is False at the start
+
         self.mpTracker = Tracking(self, self.mpVocabulary, self.mpFrameDrawer, self.mpMapDrawer,
                                   self.mpMap, self.mpKeyFrameDatabase, fsSettings, self.mSensor)
 
@@ -57,7 +58,8 @@ class System:
 
         #self.mpLoopCloser = LoopClosing(self.mpMap, self.mpKeyFrameDatabase, self.mpVocabulary, self.mSensor, ss)
         #self.mptLoopClosing_thread = threading.Thread(target=self.mpLoopCloser.run)
-        print(self.bUseViewer)
+        #print(self.bUseViewer)
+
         if self.bUseViewer:
             self.mpViewer = Viewer(self, self.mpFrameDrawer, self.mpMapDrawer, self.mpTracker, fsSettings)
             self.mptViewer_thread = threading.Thread(target=self.mpViewer.run)
@@ -136,7 +138,7 @@ if __name__ == "__main__":
         timestamp = float(timeStamps[i])
 
         Tcw = SLAM.track_stereo(mleft, mright, timestamp)
-        print(Tcw)
+        #print(Tcw)
 
     SLAM.mptLocalMapping_thread.join()
     SLAM.mptViewer_thread.join()

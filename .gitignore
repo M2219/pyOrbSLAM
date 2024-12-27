@@ -6,3 +6,6 @@
 \test.cpp
 \images
 \output.txt
+\pyORBExtractor\build
+\pyORBExtractor\lib
+

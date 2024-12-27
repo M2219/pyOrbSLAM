@@ -160,18 +160,17 @@ class FrameDrawer:
 
             # Handle states
             if pTracker.mLastProcessedState == "NOT_INITIALIZED": ################ check this loop
-                pass #!
-                #self.mvIniKeys = pTracker.mInitialFrame.mvKeys
+                self.mvIniKeys = pTracker.mCurrentFrame.mvKeys
                 #self.mvIniMatches = pTracker.mvIniMatches
+
             elif pTracker.mLastProcessedState == "OK":
                 # Mark map points and visual odometry points
                 for i, pMP in pTracker.mCurrentFrame.mvpMapPoints.items():
-                    if pMP:
-                        if not pTracker.mCurrentFrame.mvbOutlier[i]:  # Not an outlier
-                            if list(pMP.get_observations().values())[0] > 0:
-                                self.mvbMap[i] = True  # Map point
-                            else:
-                                self.mvbVO[i] = True  # Visual odometry point
+                    if not pTracker.mCurrentFrame.mvbOutlier[i]:  # Not an outlier
+                        if list(pMP.get_observations().values())[0] > 0:
+                            self.mvbMap[i] = True  # Map point
+                        else:
+                            self.mvbVO[i] = True  # Visual odometry point
 
             # Update tracking state
             self.mstate = pTracker.mLastProcessedState

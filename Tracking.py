@@ -1,5 +1,7 @@
 import threading
 import time
+import sys
+
 import numpy as np
 import cv2
 
@@ -7,10 +9,13 @@ from copy import deepcopy
 
 from Frame import Frame
 from KeyFrame import KeyFrame
-from ORBExtractor import ORBExtractor
 from ORBMatcher import ORBMatcher
 from Optimizer import Optimizer
 from MapPoint import MapPoint
+
+sys.path.append("./pyORBExtractor/lib/")
+from pyORBExtractor import ORBextractor
+
 
 class Tracking:
     def __init__(self, pSys, pVoc, pFrameDrawer, pMapDrawer, pMap, pKFDB, fSettings, sensor):
@@ -67,8 +72,8 @@ class Tracking:
         fIniThFAST = int(fSettings["ORBextractor.iniThFAST"])
         fMinThFAST = int(fSettings["ORBextractor.minThFAST"])
 
-        self.mpORBExtractorLeft = ORBExtractor(nFeatures, fScaleFactor, nLevels, fIniThFAST, fMinThFAST)
-        self.mpORBExtractorRight = ORBExtractor(nFeatures, fScaleFactor, nLevels, fIniThFAST, fMinThFAST)
+        self.mpORBExtractorLeft = ORBextractor(nFeatures, fScaleFactor, nLevels, fIniThFAST, fMinThFAST)
+        self.mpORBExtractorRight = ORBextractor(nFeatures, fScaleFactor, nLevels, fIniThFAST, fMinThFAST)
         self.mThDepth = self.mbf * fSettings["ThDepth"] / self.fx
 
         self.mlpTemporalPoints = []
@@ -77,7 +82,6 @@ class Tracking:
 
     @property
     def mpLocalMapper(self):
-
         return self.mpSystem.mpLocalMapper
 
     def grab_image_stereo(self, mImGray, imGrayRight, timestamp):
@@ -101,13 +105,11 @@ class Tracking:
         self.frame_args = [self.fx, self.fy, self.cx, self.cy, self.invfx, self.invfy,
           mfGridElementWidthInv, mfGridElementHeightInv, mnMinX, mnMaxX, mnMinY, mnMaxY, FRAME_GRID_ROWS, FRAME_GRID_COLS]
 
-
-        if len(mImGray.shape) == 2:
-            print("Images are grayscale!")
-        else:
-            print("Convert images to grayscale!")
-            exit(-1)
-
+        #if len(mImGray.shape) == 2:
+        #    print("Images are grayscale!")
+        #else:
+        #    print("Convert images to grayscale!")
+        #    exit(-1)
 
         self.mCurrentFrame = Frame(self.mImGray, self.imGrayRight, timestamp, self.mpORBExtractorLeft, self.mpORBExtractorRight, self.mpORBVocabulary,
                         self.mK, self.mDistCoef, self.mbf, self.mThDepth, self.frame_args)
@@ -167,22 +169,25 @@ class Tracking:
             else:
                 # System is initialized; track the frame
                 bOK = False
-
                 if not self.mbOnlyTracking:
                     if self.mState == "OK":
                         # Check replaced MapPoints in the last frame
 
                         self.check_replaced_in_last_frame()
-
                         if  (self.mVelocity is None) or (self.mCurrentFrame.mnId < self.mnLastRelocFrameId + 2):
+                            print("-------------------------------------------> 1")
                             bOK = self.track_reference_key_frame()
                         else:
                             bOK = self.track_with_motion_model()
+                            print("--------------------------------------------- > 2")
                             if not bOK:
+                                print("-------------------------------------------------> 3")
                                 bOK = self.track_reference_key_frame()
+
                     else:
                         bOK = self.relocalization()
                 else:
+                    print("====================> in else")
                     # Only tracking mode
                     if self.mState == "LOST":
                         bOK = self.relocalization()
@@ -227,9 +232,13 @@ class Tracking:
                 if not self.mbOnlyTracking:
                     if bOK:
                         bOK = self.track_local_map()
+                        #print("current local map -->", self.mCurrentFrame.mTcw)
+
                 else:
                     if bOK and not self.mbVO:
                         bOK = self.track_local_map()
+                        #print("update 2 -->", self.mCurrentFrame.mTcw)
+
 
                 # Update tracking state
                 self.mState = "OK" if bOK else "LOST"
@@ -241,7 +250,10 @@ class Tracking:
                     # Update motion model
                     if self.mLastFrame and self.mLastFrame.mTcw is not None:
                         LastTwc = np.concatenate((self.mLastFrame.get_rotation_inverse(), self.mLastFrame.get_camera_center()), axis=1)
-                        self.mVelocity = self.mCurrentFrame.mTcw @ LastTwc.T
+                        LastTwc = np.concatenate((LastTwc, np.array([[0, 0, 0, 1]])), axis = 0)
+
+                        self.mVelocity = self.mCurrentFrame.mTcw @ LastTwc
+
                     else:
                         self.mVelocity = None
 
@@ -270,12 +282,13 @@ class Tracking:
 
                     # Remove high-innovation points
                     for i in list(self.mCurrentFrame.mvpMapPoints.keys()):
-                        if i in self.mCurrentFrame.mvbOutlier:
+                        if self.mCurrentFrame.mvbOutlier[i]:
                              del self.mCurrentFrame.mvpMapPoints[i]
+                             del self.mCurrentFrame.mvbOutlier[i]
 
                 # Reset if tracking is lost soon after initialization
                 if self.mState == "LOST":
-                    if self.mpMap.keyframes_in_map() <= 5:
+                    if self.mpMap.key_frames_in_map() <= 5:
                         print("Track lost soon after initialization, resetting...")
                         self.mpSystem.reset()
                         return
@@ -284,6 +297,8 @@ class Tracking:
                     self.mCurrentFrame.mpReferenceKF = self.mpReferenceKF
 
                 self.mLastFrame = self.mCurrentFrame.copy(self.mCurrentFrame)
+                #print("last after local map -->", self.mLastFrame.mTcw)
+
 
         # Store frame pose information for trajectory retrieval
         if self.mCurrentFrame.mTcw is not None:
@@ -320,6 +335,7 @@ class Tracking:
                     self.pNewMP.update_normal_and_depth()
                     self.mpMap.add_map_point(self.pNewMP)
                     self.mCurrentFrame.mvpMapPoints[i] = self.pNewMP
+                    self.mCurrentFrame.mvbOutlier[i] = False
 
             print(f"New map created with {self.mpMap.map_points_in_map()} points")
 
@@ -364,14 +380,14 @@ class Tracking:
 
         # Compute Bag of Words vector
         self.mCurrentFrame.compute_BoW()
-
         # Perform ORB matching with the reference keyframe
         # If enough matches are found, setup a PnP solver
         matcher = ORBMatcher(0.7, True)
         nmatches, vpMapPointMatches = matcher.search_by_BoW_kf_f(self.mpReferenceKF, self.mCurrentFrame)
-
+        print("nmatches in track", nmatches)
         if nmatches < 15:
             return False
+
 
         self.mCurrentFrame.mvpMapPoints = vpMapPointMatches
         self.mCurrentFrame.set_pose(self.mLastFrame.mTcw)
@@ -379,20 +395,24 @@ class Tracking:
         # Optimize the pose
         self.optimizer.pose_optimization(self.mCurrentFrame)
 
+        print("in reference")
+        print("current -->", self.mCurrentFrame.mTcw)
+        print("")
+        print("last -->", self.mLastFrame.mTcw)
+
+
         # Discard outliers
         nmatches_map = 0
         for i in list(self.mCurrentFrame.mvpMapPoints.keys()):
-            if self.mCurrentFrame.mvpMapPoints[i]:
-                if self.mCurrentFrame.mvbOutlier[i]:
-                    pMP = self.mCurrentFrame.mvpMapPoints[i]
-                    del self.mCurrentFrame.mvpMapPoints[i]
-                    del self.mCurrentFrame.mvbOutlier[i]
-                    pMP.mbTrackInView = False
-                    pMP.mnLastFrameSeen = self.mCurrentFrame.mnId
-                    nmatches -= 1
-                elif self.mCurrentFrame.mvpMapPoints[i].observations() > 0:
-                    nmatches_map += 1
-
+            if self.mCurrentFrame.mvbOutlier[i]:
+                pMP = self.mCurrentFrame.mvpMapPoints[i]
+                del self.mCurrentFrame.mvpMapPoints[i]
+                del self.mCurrentFrame.mvbOutlier[i]
+                pMP.mbTrackInView = False
+                pMP.mnLastFrameSeen = self.mCurrentFrame.mnId
+                nmatches -= 1
+            elif self.mCurrentFrame.mvpMapPoints[i].observations() > 0:
+                nmatches_map += 1
         return nmatches_map >= 10
 
     def track_local_map(self):
@@ -403,26 +423,31 @@ class Tracking:
         Returns:
             bool: True if tracking is successful, False otherwise.
         """
-        self.update_local_map()
+        #print("before local", len(self.mCurrentFrame.mvpMapPoints))
+        #print("before local", len(self.mCurrentFrame.mvbOutlier))
 
+        self.update_local_map()
         self.search_local_points()
 
+        #print("after local", len(self.mCurrentFrame.mvpMapPoints))
+        #print("after local", len(self.mCurrentFrame.mvbOutlier))
+
         self.optimizer.pose_optimization(self.mCurrentFrame)
+
         self.mnMatchesInliers = 0
 
         # Update MapPoint statistics
         for i in list(self.mCurrentFrame.mvpMapPoints.keys()):
-            if self.mCurrentFrame.mvpMapPoints[i]:
-                if not self.mCurrentFrame.mvbOutlier[i]:
-                    self.mCurrentFrame.mvpMapPoints[i].increase_found()
-                    if not self.mbOnlyTracking:
-                        if self.mCurrentFrame.mvpMapPoints[i].observations() > 0:
-                            self.mnMatchesInliers += 1
-                    else:
+            if not self.mCurrentFrame.mvbOutlier[i]:
+                self.mCurrentFrame.mvpMapPoints[i].increase_found()
+                if not self.mbOnlyTracking:
+                    if self.mCurrentFrame.mvpMapPoints[i].observations() > 0:
                         self.mnMatchesInliers += 1
                 else:
-                    del self.mCurrentFrame.mvpMapPoints[i]
-                    del self.mCurrentFrame.mvbOutlier[i]
+                    self.mnMatchesInliers += 1
+            else:
+                del self.mCurrentFrame.mvpMapPoints[i]
+                del self.mCurrentFrame.mvbOutlier[i]
         # Decide if the tracking was successful
         # More restrictive if there was a recent relocalization
         if self.mCurrentFrame.mnId < self.mnLastRelocFrameId + self.mMaxFrames and self.mnMatchesInliers < 50:
@@ -439,11 +464,13 @@ class Tracking:
         and updating local keyframes and points.
         """
         # Set reference map points for visualization
+
         self.mpMap.set_reference_map_points(self.mvpLocalMapPoints)
 
         # Update local keyframes and points
         self.update_local_keyframes()
         self.update_local_points()
+
 
     def update_local_keyframes(self):
         """
@@ -453,17 +480,16 @@ class Tracking:
         # Map point voting for keyframes
         self.keyframeCounter = {}
         for i in list(self.mCurrentFrame.mvpMapPoints.keys()):
-            if self.mCurrentFrame.mvpMapPoints[i]:
-                pMP = self.mCurrentFrame.mvpMapPoints[i]
-                if not pMP.is_bad():
-                    observations = pMP.get_observations()
-                    for pKF, _ in observations.items():
-                        if pKF not in self.keyframeCounter:
-                            self.keyframeCounter[pKF] = 0
-                        self.keyframeCounter[pKF] += 1
-                else:
-                    del self.mCurrentFrame.mvpMapPoints[i]
-                    del self.mCurrentFrame.mvbOutlier[i]
+            pMP = self.mCurrentFrame.mvpMapPoints[i]
+            if not pMP.is_bad():
+                observations = pMP.get_observations()
+                for pKF, _ in observations.items():
+                    if pKF not in self.keyframeCounter:
+                        self.keyframeCounter[pKF] = 0
+                    self.keyframeCounter[pKF] += 1
+            else:
+                del self.mCurrentFrame.mvpMapPoints[i]
+                del self.mCurrentFrame.mvbOutlier[i]
 
         if not self.keyframeCounter:
             return
@@ -509,14 +535,13 @@ class Tracking:
         """
         # Do not search map points already matched
         for i, pMP in self.mCurrentFrame.mvpMapPoints.items():
-            if pMP:
-                if pMP.is_bad():
-                    del self.mCurrentFrame.mvpMapPoints[i]
-                    del self.mCurrentFrame.mvbOutlier[i]
-                else:
-                    pMP.increase_visible()
-                    pMP.mnLastFrameSeen = self.mCurrentFrame.mnId
-                    pMP.mbTrackInView = False
+            if pMP.is_bad():
+                del self.mCurrentFrame.mvpMapPoints[i]
+                del self.mCurrentFrame.mvbOutlier[i]
+            else:
+                pMP.increase_visible()
+                pMP.mnLastFrameSeen = self.mCurrentFrame.mnId
+                pMP.mbTrackInView = False
 
         nToMatch = 0
         # Project points in frame and check their visibility
@@ -643,6 +668,8 @@ class Tracking:
                 elif self.mCurrentFrame.mvpMapPoints[i].observations() < 1:
                     bCreateNew = True
                     del self.mCurrentFrame.mvpMapPoints[i]
+                    del self.mCurrentFrame.mvbOutlier[i]
+
                 if bCreateNew:
                     x3D = self.mCurrentFrame.unproject_stereo(i)
                     pNewMP = MapPoint(x3D, pKF, self.mpMap)
@@ -653,6 +680,8 @@ class Tracking:
                     self.mpMap.add_map_point(pNewMP)
 
                     self.mCurrentFrame.mvpMapPoints[i] = pNewMP
+                    self.mCurrentFrame.mvbOutlier[i] = False
+
                     nPoints += 1
                 else:
                     nPoints += 1
@@ -679,13 +708,52 @@ class Tracking:
         # Update the last frame pose according to its reference keyframe
         # Create "visual odometry" points if in Localization Mode
         self.update_last_frame()
-        self.mCurrentFrame.set_pose(self.mVelocity.T @ self.mLastFrame.mTcw)
+
+        self.mCurrentFrame.set_pose(self.mVelocity @ self.mLastFrame.mTcw)
+        print("current -->", self.mCurrentFrame.mTcw)
+        print("")
+        print("last -->", self.mLastFrame.mTcw)
 
         self.mCurrentFrame.mvpMapPoints.clear()
 
+
+        #print("before len outlier", len(self.mCurrentFrame.mvbOutlier))
+
+        #j = 0
+        #for i, o in self.mCurrentFrame.mvbOutlier.items():
+        #    if o:
+        #        j = j + 1
+
+        #print("before number of outliers curretn", j)
+        #print(self.mCurrentFrame.mvbOutlier.values())
+
+
         # Project points seen in the previous frame
+        #th = 7
+        #print("kp", len(self.mLastFrame.mvKeys))
+
+
+        #print("mp last", len(self.mLastFrame.mvpMapPoints))
+        #print("ot last", self.mLastFrame.mvbOutlier)
+
+        #print("mp cc", len(self.mCurrentFrame.mvpMapPoints))
+        #print("ot cc", len(self.mCurrentFrame.mvbOutlier))
+        #print("ot last", self.mLastFrame.mvbOutlier)
+
+        #j = 0
+        #for i, o in self.mLastFrame.mvbOutlier.items():
+        #    if o:
+        #        j = j + 1
+
+        #print("number of outliers", j)
+
+
         th = 7
         nmatches = matcher.search_by_projection_f_f(self.mCurrentFrame, self.mLastFrame, th)
+
+
+        print("nmatches", nmatches)
+        print("mp before optimization", len(self.mCurrentFrame.mvpMapPoints))
 
         # If few matches, use a wider search window
         if nmatches < 20:
@@ -695,23 +763,38 @@ class Tracking:
         if nmatches < 20:
             return False
 
+        print("nmatches", nmatches)
+
         # Optimize the frame pose with all matches
-        Optimizer.pose_optimization(self.mCurrentFrame)
+        self.optimizer.pose_optimization(self.mCurrentFrame)
+        print("mp after optimization", len(self.mCurrentFrame.mvpMapPoints))
+        print("len outlier", len(self.mCurrentFrame.mvbOutlier))
+
+        j = 0
+        for i, o in self.mCurrentFrame.mvbOutlier.items():
+            if o:
+                j = j + 1
+
+        print("number of outliers curretn", j)
+        #print(self.mCurrentFrame.mvbOutlier.values())
 
         # Discard outliers
         nmatches_map = 0
         for i in list(self.mCurrentFrame.mvpMapPoints.keys()):
-            if i in self.mCurrentFrame.mvbOutlier:
+            if self.mCurrentFrame.mvbOutlier[i]:
                 pMP = self.mCurrentFrame.mvpMapPoints[i]
                 del self.mCurrentFrame.mvpMapPoints[i]
                 del self.mCurrentFrame.mvbOutlier[i]
                 pMP.mbTrackInView = False
                 pMP.mnLastFrameSeen = self.mCurrentFrame.mnId
                 nmatches -= 1
+
             elif self.mCurrentFrame.mvpMapPoints[i].observations() > 0:
                 nmatches_map += 1
 
-        if mbOnlyTracking:
+        print("nmatches_map = ", nmatches_map)
+
+        if self.mbOnlyTracking:
             mbVO = nmatches_map < 10
             return nmatches > 20
 
@@ -760,6 +843,7 @@ class Tracking:
                 pNewMP = MapPoint(x3D, self.mpMap, self.mLastFrame, i)
 
                 self.mLastFrame.mvpMapPoints[i] = pNewMP
+                self.mLastFrame.mvbOutlier[i] = False
                 self.mlpTemporalPoints.append(pNewMP)
                 nPoints += 1
             else:
@@ -822,12 +906,17 @@ if __name__ == "__main__":
 
     import yaml
     from pyDBoW.TemplatedVocabulary import TemplatedVocabulary
-    from ORBExtractor import ORBExtractor
+
+    sys.path.append("./pyORBExtractor/lib/")
+    from pyORBExtractor import ORBextractor
+
     from stereo_kitti import LoadImages
     from KeyFrameDatabase import KeyFrameDatabase
     from Map import Map
     from FrameDrawer import FrameDrawer
     from MapDrawer import MapDrawer
+
+    from System import System
 
     vocabulary = TemplatedVocabulary(k=5, L=3, weighting="TF_IDF", scoring="L1_NORM")
     vocabulary.load_from_text_file("./Vocabulary/ORBvoc.txt")
@@ -855,8 +944,8 @@ if __name__ == "__main__":
     mpFrameDrawer = FrameDrawer(mpMap)
     mpMapDrawer = MapDrawer(mpMap, cfg)
 
-    mpTracker = Tracking(False, vocabulary, mpFrameDrawer, mpMapDrawer,
-                                  mpMap, mpKeyFrameDatabase, cfg, sensor="Stereo", ss=ss)
+    mpTracker = Tracking(System, vocabulary, mpFrameDrawer, mpMapDrawer,
+                                  mpMap, mpKeyFrameDatabase, cfg, sensor="Stereo")
 
     for i in range(10):
 
@@ -865,6 +954,6 @@ if __name__ == "__main__":
         timestamp = float(timeStamps[i])
 
         Twc = mpTracker.grab_image_stereo(mleft, mright, timestamp)
-        print(Twc)
+        #print(Twc)
 
 
