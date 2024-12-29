@@ -358,6 +358,7 @@ class ORBMatcher:
         b_backward = -tlc[2] > current_frame.mb
 
         for i in list(last_frame.mvpMapPoints.keys()):
+
             pMP = last_frame.mvpMapPoints[i]
             if not last_frame.mvbOutlier[i]:
                 # Project
@@ -582,16 +583,16 @@ class ORBMatcher:
         Ow = pKF.get_camera_center()
 
         nFused = 0
-
-        for pMP in vpMapPoints:
-            if not pMP or pMP.is_bad() or pMP.is_in_keyframe(pKF):
+        for i in range(len(vpMapPoints)):
+            pMP = vpMapPoints[i]
+            if pMP.is_bad() or pMP.is_in_key_frame(pKF):
                 continue
 
             # Get 3D world coordinates
             p3Dw = pMP.get_world_pos()
 
             # Transform into camera coordinates
-            p3Dc = Rcw @ p3Dw + np.expand_dims(tcw, axis=0).T
+            p3Dc = Rcw @ p3Dw + tcw
 
             # Depth must be positive
             if p3Dc[2][0] < 0.0:
@@ -620,7 +621,7 @@ class ORBMatcher:
 
             # Check viewing angle
             Pn = pMP.get_normal()
-            if np.dot(PO, Pn) < 0.5 * dist3D:
+            if np.dot(PO.T, Pn) < 0.5 * dist3D:
                 continue
 
             # Predict scale level
@@ -685,6 +686,154 @@ class ORBMatcher:
                 nFused += 1
 
         return nFused
+
+    def search_for_triangulation(self, pKF1, pKF2, F12, bOnlyStereo=False):
+
+        vFeatVec1 = pKF1.mFeatVec
+        vFeatVec2 = pKF2.mFeatVec
+
+        # Compute epipole in the second image
+        Cw = pKF1.get_camera_center()
+        R2w = pKF2.get_rotation()
+        t2w = pKF2.get_translation()
+        C2 = R2w @ Cw + t2w
+        invz = 1.0 / C2[2]
+        ex = pKF2.fx * C2[0] * invz + pKF2.cx
+        ey = pKF2.fy * C2[1] * invz + pKF2.cy
+
+        nmatches = 0
+        vbMatched2 = [False] * pKF2.N
+        vMatches12 = [-1] * pKF1.N
+
+        rotHist = [[] for _ in range(HISTO_LENGTH)]
+        factor = 1.0 / HISTO_LENGTH
+
+        f1it = iter(vFeatVec1.items())
+        f2it = iter(vFeatVec2.items())
+
+        while True:
+            try:
+                f1key, f1val = next(f1it)
+                f2key, f2val = next(f2it)
+            except StopIteration:
+                break
+
+            if f1key == f2key:
+                for idx1 in f1val:
+                    pMP1 = pKF1.get_map_point(idx1)
+
+                    # If there is already a MapPoint skip
+                    if pMP1:
+                        continue
+
+                    bStereo1 = pKF1.mvuRight[idx1] >= 0
+                    if bOnlyStereo and not bStereo1:
+                        continue
+
+                    kp1 = pKF1.mvKeysUn[idx1]
+                    d1 = pKF1.mDescriptors[idx1]
+
+                    bestDist = TH_LOW
+                    bestIdx2 = -1
+
+                    for idx2 in f2val:
+                        pMP2 = pKF2.get_map_point(idx2)
+
+                        # If already matched or there is a MapPoint, skip
+                        if vbMatched2[idx2] or pMP2:
+                            continue
+
+                        bStereo2 = pKF2.mvuRight[idx2] >= 0
+                        if bOnlyStereo and not bStereo2:
+                            continue
+
+                        d2 = pKF2.mDescriptors[idx2]
+                        dist = self.descriptor_distance(d1, d2)
+
+                        if dist > TH_LOW or dist > bestDist:
+                            continue
+
+                        kp2 = pKF2.mvKeysUn[idx2]
+
+                        if not bStereo1 and not bStereo2:
+                            distex = ex - kp2.pt[0]
+                            distey = ey - kp2.pt[1]
+                            if distex**2 + distey**2 < 100 * pKF2.mvScaleFactors[kp2.octave]:
+                                continue
+
+                        if self.check_dist_epipolar_line(kp1, kp2, F12, pKF2):
+                            bestIdx2 = idx2
+                            bestDist = dist
+
+                    if bestIdx2 >= 0:
+                        kp2 = pKF2.mvKeysUn[bestIdx2]
+                        vMatches12[idx1] = bestIdx2
+                        nmatches += 1
+                        vbMatched2[bestIdx2] = True
+
+                        if self.mbCheckOrientation:
+                            rot = kp1.angle - kp2.angle
+                            if rot < 0:
+                                rot += 360.0
+                            bin_idx = round(rot * factor)
+                            if bin_idx == HISTO_LENGTH:
+                                bin_idx = 0
+                            rotHist[bin_idx].append(idx1)
+
+            elif f1key < f2key:
+                f1key = next(f1key)
+            else:
+                f2key = next(f2key)
+
+        if self.mbCheckOrientation:
+            # Find the top three maxima in the orientation histogram
+            ind1, ind2, ind3 = self.compute_three_maxima(rotHist, HISTO_LENGTH)
+
+            # Remove matches not in the top three orientation bins
+            for i in range(HISTO_LENGTH):
+                if i == ind1 or i == ind2 or i == ind3:
+                    continue
+
+                for j in rotHist[i]:
+                    vMatches12[j] = -1
+                    nmatches -= 1
+
+        # Clear and populate the matched pairs
+        vMatchedPairs = []
+        for i, match in enumerate(vMatches12):
+            if match < 0:
+                continue
+            vMatchedPairs.append((i, match))
+
+        return vMatchedPairs
+
+    def check_dist_epipolar_line(self, kp1, kp2, F12, pKF2):
+        """
+        Checks if a pair of keypoints satisfies the epipolar constraint.
+        Args:
+            kp1: Keypoint in the first image (with attributes `pt` as (x, y)).
+            kp2: Keypoint in the second image (with attributes `pt` as (x, y)).
+            F12: Fundamental matrix (3x3 NumPy array).
+            pKF2: Second keyframe object with `mvLevelSigma2` (list of scale uncertainties).
+        Returns:
+            bool: True if the keypoints satisfy the epipolar constraint, False otherwise.
+        """
+        # Compute epipolar line coefficients
+        a = kp1.pt[0] * F12[0, 0] + kp1.pt[1] * F12[1, 0] + F12[2, 0]
+        b = kp1.pt[0] * F12[0, 1] + kp1.pt[1] * F12[1, 1] + F12[2, 1]
+        c = kp1.pt[0] * F12[0, 2] + kp1.pt[1] * F12[1, 2] + F12[2, 2]
+
+        # Compute distance from keypoint to epipolar line
+        num = a * kp2.pt[0] + b * kp2.pt[1] + c
+        den = a**2 + b**2
+        if den == 0:
+            return False
+
+        dsqr = (num**2) / den
+
+        # Check threshold
+        threshold = 3.84 * pKF2.mvLevelSigma2[kp2.octave]
+        return dsqr < threshold
 
 if __name__ == "__main__":
 

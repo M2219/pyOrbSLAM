@@ -167,7 +167,7 @@ class FrameDrawer:
                 # Mark map points and visual odometry points
                 for i, pMP in pTracker.mCurrentFrame.mvpMapPoints.items():
                     if not pTracker.mCurrentFrame.mvbOutlier[i]:  # Not an outlier
-                        if list(pMP.get_observations().values())[0] > 0:
+                        if len(pMP.get_observations()) > 0:
                             self.mvbMap[i] = True  # Map point
                         else:
                             self.mvbVO[i] = True  # Visual odometry point

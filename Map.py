@@ -15,7 +15,6 @@ class Map:
         self.mnBigChangeIdx = 0  # Index for tracking big changes
 
     def add_key_frame(self, pKF):
-
         with self.mMutexMap:
             self.mspKeyFrames.add(pKF)
             if pKF.mnId > self.mnMaxKFid:
@@ -32,7 +31,6 @@ class Map:
             self.mspMapPoints.discard(pMP)
 
     def erase_key_frame(self, pKF):
-
         with self.mMutexMap:
             self.mspKeyFrames.discard(pKF)
 

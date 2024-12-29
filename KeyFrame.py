@@ -73,6 +73,9 @@ class KeyFrame:
 
         self.mK = F.mK
         self.mvpMapPoints = F.mvpMapPoints
+        self.mvbOutlier = F.mvbOutlier
+        #print("self.mvpMapPoints", len(self.mvpMapPoints))
+        #print("self.mvbOutlier", len(self.mvbOutlier))
         self.mpKeyFrameDB = pKFDB
         self.mpORBvocabulary = F.mpORBvocabulary
         self.mbFirstConnection = True
@@ -88,6 +91,8 @@ class KeyFrame:
         # Assign a unique ID
         self.mnId = KeyFrame.nNextId
         KeyFrame.nNextId += 1
+
+        self.mGrid = F.mGrid
 
         if F.mTcw is not None:
             self.set_pose(F.mTcw)
@@ -226,7 +231,7 @@ class KeyFrame:
         with self.mMutexConnections:
 
             vPairs = [(weight, pKF) for pKF, weight in self.mConnectedKeyFrameWeights.items()]
-            vPairs.sort()
+            vPairs = sorted(vPairs, key=lambda x: x[0])
             self.mvpOrderedConnectedKeyFrames = [pKF for _, pKF in vPairs]
             self.mvOrderedWeights = [weight for weight, _ in vPairs]
 
@@ -242,8 +247,8 @@ class KeyFrame:
             int: The weight of the connection, or 0 if not connected.
         """
         with self.mMutexConnections:
-            if pKF in shared_state["mConnectedKeyFrameWeights"]:
-                return shared_state["mConnectedKeyFrameWeights"][pKF]
+            if pKF in self.mConnectedKeyFrameWeights:
+                return self.mConnectedKeyFrameWeights[pKF]
             else:
                 return 0
 
@@ -276,19 +281,21 @@ class KeyFrame:
     def add_map_point(self, pMP, indx):
         with self.mMutexFeatures:
             self.mvpMapPoints[indx] = pMP
+            self.mvbOutlier[indx] = False
 
     def erase_map_point_match_by_index(self, idx):
         with self.mMutexFeatures:
-            if 0 <= idx < len(self.mvpMapPoints):
+            if idx in self.mvpMapPoints:
                del self.mvpMapPoints[idx]
+               del self.mvbOutlier[idx]
 
-    def erase_map_point_match(self, pMP):
-        idx = pMP.get_index_in_key_frame(self)
-        if idx >= 0 and idx < len(self.mvpMapPoints):
+    def erase_map_point_match(self, idx):
+        if idx in self.mvpMapPoints:
             del self.mvpMapPoints[idx]
 
     def replace_map_point_match(self, idx, pMP):
         self.mvpMapPoints[idx] = pMP
+        self.mvbOutlier[idx] = True
 
     def get_map_points(self):
         with self.mMutexFeatures:
@@ -311,7 +318,10 @@ class KeyFrame:
 
     def get_map_point(self, idx):
         with self.mMutexFeatures:
-            return self.mvpMapPoints[idx] if 0 <= idx < len(self.mvpMapPoints) else None
+            if idx in self.mvpMapPoints:
+                return self.mvpMapPoints[idx]
+            else:
+                return None
 
     def add_child(self, pKF):
         with self.mMutexConnections:
@@ -359,7 +369,7 @@ class KeyFrame:
         if self.mbToBeErased:
             self.SetBadFlag()
 
-    def SetBadFlag(self):
+    def set_bad_flag(self):
         """
         Marks the KeyFrame as bad, removes connections, updates the spanning tree, and erases references.
         """
@@ -435,7 +445,7 @@ class KeyFrame:
         with self.mMutexConnections:
             return self.mbBad
 
-    def EraseConnection(self, pKF):
+    def erase_connection(self, pKF):
         bUpdate = False
 
         with self.mMutexConnections:
@@ -447,7 +457,7 @@ class KeyFrame:
         if bUpdate:
             self.UpdateBestCovisibles()
 
-    def GetFeaturesInArea(self, x, y, r):
+    def get_features_in_area(self, x, y, r):
         """
         Retrieves the indices of features within a specified area.
 
@@ -461,18 +471,18 @@ class KeyFrame:
         """
         vIndices = []
         nMinCellX = max(0, int(np.floor((x - self.mnMinX - r) * self.mfGridElementWidthInv)))
-        if nMinCellX >= len(self.mGrid):
+        if nMinCellX >= self.mnGridCols:
             return vIndices
 
-        nMaxCellX = min(len(self.mGrid) - 1, int(np.ceil((x - self.mnMinX + r) * self.mfGridElementWidthInv)))
+        nMaxCellX = min(self.mnGridCols - 1, int(np.ceil((x - self.mnMinX + r) * self.mfGridElementWidthInv)))
         if nMaxCellX < 0:
             return vIndices
 
         nMinCellY = max(0, int(np.floor((y - self.mnMinY - r) * self.mfGridElementHeightInv)))
-        if nMinCellY >= len(self.mGrid[0]):
+        if nMinCellY >= self.mnGridRows:
             return vIndices
 
-        nMaxCellY = min(len(self.mGrid[0]) - 1, int(np.ceil((y - self.mnMinY + r) * self.mfGridElementHeightInv)))
+        nMaxCellY = min(self.mnGridRows - 1, int(np.ceil((y - self.mnMinY + r) * self.mfGridElementHeightInv)))
         if nMaxCellY < 0:
             return vIndices
 
@@ -488,7 +498,7 @@ class KeyFrame:
 
         return vIndices
 
-    def IsInImage(self, x, y):
+    def is_in_image(self, x, y):
         """
         Checks if a point is within the image bounds.
 
@@ -501,7 +511,7 @@ class KeyFrame:
         """
         return self.mnMinX <= x < self.mnMaxX and self.mnMinY <= y < self.mnMaxY
 
-    def UnprojectStereo(self, i):
+    def unproject_stereo(self, i):
         """
         Unprojects a 2D point to 3D using stereo depth.
 
@@ -524,7 +534,7 @@ class KeyFrame:
         else:
             return None
 
-    def ComputeSceneMedianDepth(self, q):
+    def compute_scene_median_depth(self, q):
         """
         Computes the median depth of the scene.
 

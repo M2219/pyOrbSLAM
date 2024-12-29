@@ -41,6 +41,7 @@ class MapPoint:
         self.mbBad = False  # Flag indicating if this MapPoint is bad
         self.mpReplaced = None  # Pointer to replaced MapPoint
         self.mObservations = {}  # Pointer to replaced MapPoint
+        self.mbTrackInView = None
 
         self.mfMinDistance = 0  # Minimum distance to the camera
         self.mfMaxDistance = 0  # Maximum distance to the camera
@@ -165,7 +166,6 @@ class MapPoint:
 
         # Remove this MapPoint from the map
         self.mpMap.erase_map_point(self)
-
 
     def is_bad(self):
         with self.mMutexFeatures:

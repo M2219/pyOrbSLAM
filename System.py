@@ -60,10 +60,10 @@ class System:
         #self.mptLoopClosing_thread = threading.Thread(target=self.mpLoopCloser.run)
         #print(self.bUseViewer)
 
-        if self.bUseViewer:
-            self.mpViewer = Viewer(self, self.mpFrameDrawer, self.mpMapDrawer, self.mpTracker, fsSettings)
-            self.mptViewer_thread = threading.Thread(target=self.mpViewer.run)
-            self.mptViewer_thread.start()
+        #if self.bUseViewer:
+        #    self.mpViewer = Viewer(self, self.mpFrameDrawer, self.mpMapDrawer, self.mpTracker, fsSettings)
+        #    self.mptViewer_thread = threading.Thread(target=self.mpViewer.run)
+        #    self.mptViewer_thread.start()
 
 
 
@@ -131,14 +131,14 @@ if __name__ == "__main__":
 
     SLAM = System(strVocFile, strSettingsFile, "Stereo", bUseViewer=True)
 
-    for i in range(5):
-
+    for i in range(10):
+        print("FFFFFFFFFFFFFFFFFFFrame = ", i)
         mleft = cv2.imread(leftImages[i], cv2.IMREAD_GRAYSCALE)
         mright = cv2.imread(rightImages[i], cv2.IMREAD_GRAYSCALE)
         timestamp = float(timeStamps[i])
 
         Tcw = SLAM.track_stereo(mleft, mright, timestamp)
-        #print(Tcw)
+        print(Tcw)
 
     SLAM.mptLocalMapping_thread.join()
     SLAM.mptViewer_thread.join()

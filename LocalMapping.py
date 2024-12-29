@@ -1,6 +1,10 @@
 import threading
 import time
+import numpy as np
+
+from MapPoint import MapPoint
 from ORBMatcher import ORBMatcher
+from Optimizer import Optimizer
 
 class LocalMapping:
 
@@ -26,6 +30,7 @@ class LocalMapping:
         self.mlNewKeyFrames = []
 
         self.mlpRecentAddedMapPoints = []
+        self.optimizer = Optimizer()
 
     def keyframes_in_queue(self):
         with self.mMutexNewKFs:
@@ -40,12 +45,13 @@ class LocalMapping:
         while True:
             # Mark Local Mapping as busy
             self.set_accept_key_frames(False)
-            time.sleep(0.2)
-            print(self.mlNewKeyFrames)
+            time.sleep(0.3)
             # Check if there are keyframes in the queue
             if self.check_new_key_frames():
 
+                print(self.mlNewKeyFrames)
                 # Process new keyframe
+
                 self.process_new_key_frame()
 
                 # check recent MapPoints
@@ -63,11 +69,10 @@ class LocalMapping:
                 if not self.check_new_key_frames() and not self.stop_requested():
                     # Perform local bundle adjustment
                     if self.mpMap.key_frames_in_map() > 2:
-                        Optimizer.local_bundle_adjustment(self.mpCurrentKeyFrame, self.mbAbortBA, self.mpMap)
+                        self.optimizer.local_bundle_adjustment(self.mpCurrentKeyFrame, self.mbAbortBA, self.mpMap)
 
                     # Cull redundant local keyframes
                     self.key_frame_culling()
-
                 #self.mpLoopCloser.insert_key_frame(self.mpCurrentKeyFrame) not yet
 
             elif self.stop():
@@ -109,7 +114,8 @@ class LocalMapping:
 
     def process_new_key_frame(self):
         with self.mMutexNewKFs:
-            self.mpCurrentKeyFrame = self.mlNewKeyFrames.pop(0)
+            self.mpCurrentKeyFrame = self.mlNewKeyFrames[0]
+            self.mlNewKeyFrames.pop(0)
 
         self.mpCurrentKeyFrame.compute_BoW()
 
@@ -123,6 +129,9 @@ class LocalMapping:
                     pMP.compute_distinctive_descriptors()
                 else:
                     self.mlpRecentAddedMapPoints.append(pMP)
+
+        self.mpCurrentKeyFrame.update_connections();
+        self.mpMap.add_key_frame(self.mpCurrentKeyFrame);
 
     def map_point_culling(self):
         """
@@ -174,14 +183,16 @@ class LocalMapping:
         Rwc1 = Rcw1.T
         tcw1 = self.mpCurrentKeyFrame.get_translation()
         Ow1 = self.mpCurrentKeyFrame.get_camera_center()
+        Tcw1 = np.append(Rcw1, tcw1, 1)
+
 
         fx1, fy1, cx1, cy1 = self.mpCurrentKeyFrame.fx, self.mpCurrentKeyFrame.fy, self.mpCurrentKeyFrame.cx, self.mpCurrentKeyFrame.cy
         invfx1, invfy1 = self.mpCurrentKeyFrame.invfx, self.mpCurrentKeyFrame.invfy
         ratioFactor = 1.5 * self.mpCurrentKeyFrame.mfScaleFactor
         # Iterate through neighboring keyframes
-        for pKF2 in vpNeighKFs:
+        for i, pKF2 in enumerate(vpNeighKFs):
             # Check for new keyframes
-            if self.mpCurrentKeyFrame.check_new_key_frames():
+            if (i > 0) and (self.check_new_key_frames()):
                 return
 
             Ow2 = pKF2.get_camera_center()
@@ -196,19 +207,23 @@ class LocalMapping:
             F12 = self.compute_f12(self.mpCurrentKeyFrame, pKF2)
 
             # Find matches
-            vMatchedIndices = matcher.search_for_triangulation(mpCurrentKeyFrame, pKF2, F12, epipolar_constraint=False)
+            vMatchedIndices = matcher.search_for_triangulation(self.mpCurrentKeyFrame, pKF2, F12, bOnlyStereo=False)
 
             Rcw2 = pKF2.get_rotation()
             Rwc2 = Rcw2.T
             tcw2 = pKF2.get_translation()
 
+            Tcw2 = np.append(Rcw2, tcw2, 1)
             fx2, fy2, cx2, cy2 = pKF2.fx, pKF2.fy, pKF2.cx, pKF2.cy
             invfx2, invfy2 = pKF2.invfx, pKF2.invfy
 
             # Triangulate matches
             for idx1, idx2 in vMatchedIndices:
-                kp1, kp1_ur = mpCurrentKeyFrame.mvKeysUn[idx1], mpCurrentKeyFrame.mvuRight[idx1]
+                kp1, kp1_ur = self.mpCurrentKeyFrame.mvKeysUn[idx1], self.mpCurrentKeyFrame.mvuRight[idx1]
+                bStereo1 = kp1_ur>=0
+
                 kp2, kp2_ur = pKF2.mvKeysUn[idx2], pKF2.mvuRight[idx2]
+                bStereo2 = kp2_ur>=0
 
                 xn1 = np.array([(kp1.pt[0] - cx1) * invfx1, (kp1.pt[1] - cy1) * invfy1, 1.0])
                 xn2 = np.array([(kp2.pt[0] - cx2) * invfx2, (kp2.pt[1] - cy2) * invfy2, 1.0])
@@ -217,56 +232,119 @@ class LocalMapping:
                 ray2 = Rwc2 @ xn2
                 cosParallaxRays = np.dot(ray1, ray2) / (np.linalg.norm(ray1) * np.linalg.norm(ray2))
 
-                # Handle stereo information
-                cosParallaxStereo = min(
-                    cosParallaxRays + 1,
-                    np.cos(2 * np.arctan2(mpCurrentKeyFrame.mb / 2, mpCurrentKeyFrame.mvDepth[idx1])) if kp1_ur >= 0 else float('inf'),
-                    np.cos(2 * np.arctan2(pKF2.mb / 2, pKF2.mvDepth[idx2])) if kp2_ur >= 0 else float('inf')
-                )
+                cosParallaxStereo = cosParallaxRays + 1
+                cosParallaxStereo1 = cosParallaxStereo
+                cosParallaxStereo2 = cosParallaxStereo
 
-                if cosParallaxRays < cosParallaxStereo and cosParallaxRays > 0 and (kp1_ur >= 0 or kp2_ur >= 0 or cosParallaxRays < 0.9998):
+                # Handle stereo information
+
+
+                if bStereo1:
+                    cosParallaxStereo1 = np.cos(2 * np.arctan2(self.mpCurrentKeyFrame.mb / 2, self.mpCurrentKeyFrame.mvDepth[idx1]))
+                elif bStereo2:
+                    cosParallaxStereo2 = np.cos(2 * np.arctan2(pKF2.mb / 2, pKF2.mvDepth[idx2]))
+
+                cosParallaxStereo = min(cosParallaxStereo1, cosParallaxStereo2)
+
+                if cosParallaxRays < cosParallaxStereo and cosParallaxRays > 0 and (bStereo1 or bStereo2 or cosParallaxRays < 0.9998):
                     # Triangulate 3D point
                     A = np.vstack([
-                        xn1[0] * Rcw1[2, :] - Rcw1[0, :],
-                        xn1[1] * Rcw1[2, :] - Rcw1[1, :],
-                        xn2[0] * Rcw2[2, :] - Rcw2[0, :],
-                        xn2[1] * Rcw2[2, :] - Rcw2[1, :]
+                        xn1[0] * Tcw1[2, :] - Tcw1[0, :],
+                        xn1[1] * Tcw1[2, :] - Tcw1[1, :],
+                        xn2[0] * Tcw2[2, :] - Tcw2[0, :],
+                        xn2[1] * Tcw2[2, :] - Tcw2[1, :]
                     ])
+
                     _, _, vt = np.linalg.svd(A)
-                    x3D = vt[-1, :3] / vt[-1, 3]
+                    x3D = np.expand_dims(vt[-1, 0:3] / vt[-1, 3], axis=0).T
 
-                    # Check depth and reprojection error
-                    if not check_depth_and_reprojection(x3D, Rcw1, tcw1, fx1, fy1, cx1, cy1, kp1, kp1_ur, mpCurrentKeyFrame) or \
-                       not check_depth_and_reprojection(x3D, Rcw2, tcw2, fx2, fy2, cx2, cy2, kp2, kp2_ur, pKF2):
+                elif bStereo1 and cosParallaxStereo1 < cosParallaxStereo2:
+                    x3D = self.mpCurrentKeyFrame.unproject_stereo(idx1)
+
+                elif bStereo2 and cosParallaxStereo2 < cosParallaxStereo1:
+                    x3D = pKF2.unproject_stereo(idx2)
+                else:
+                    continue
+
+
+                # Transform x3D to homogeneous coordinates
+
+                # Check triangulation in front of cameras
+                z1 = np.dot(Rcw1[2:3, :], x3D)[0][0] + tcw1[2, 0]
+                if z1 <= 0:
+                    continue
+
+                z2 = np.dot(Rcw2[2:3, :], x3D)[0][0] + tcw2[2, 0]
+                if z2 <= 0:
+                    continue
+
+                # Check reprojection error in first keyframe
+                sigmaSquare1 = self.mpCurrentKeyFrame.mvLevelSigma2[kp1.octave]
+                x1 = np.dot(Rcw1[0:1, :], x3D)[0][0] + tcw1[0, 0]
+                y1 = np.dot(Rcw1[1:2, :], x3D)[0][0] + tcw1[1, 0]
+                invz1 = 1.0 / z1
+
+                u1 = fx1 * x1 * invz1 + cx1
+                v1 = fy1 * y1 * invz1 + cy1
+                errX1 = u1 - kp1.pt[0]
+                errY1 = v1 - kp1.pt[1]
+
+                if not bStereo1:
+                    if (errX1**2 + errY1**2) > 5.991 * sigmaSquare1:
+                        continue
+                else:
+                    u1_r = u1 - self.mpCurrentKeyFrame.mbf * invz1
+                    errX1_r = u1_r - kp1_ur
+                    if (errX1**2 + errY1**2 + errX1_r**2) > 7.8 * sigmaSquare1:
                         continue
 
-                    # Check scale consistency
-                    normal1, normal2 = x3D - Ow1, x3D - Ow2
-                    dist1, dist2 = np.linalg.norm(normal1), np.linalg.norm(normal2)
+                # Check reprojection error in second keyframe
+                sigmaSquare2 = pKF2.mvLevelSigma2[kp2.octave]
+                x2 = np.dot(Rcw2[0:1, :], x3D)[0][0] + tcw2[0, 0]
+                y2 = np.dot(Rcw2[1:2, :], x3D)[0][0] + tcw2[1, 0]
+                invz2 = 1.0 / z2
 
-                    if dist1 == 0 or dist2 == 0:
+                u2 = fx2 * x2 * invz2 + cx2
+                v2 = fy2 * y2 * invz2 + cy2
+                errX2 = u2 - kp2.pt[0]
+                errY2 = v2 - kp2.pt[1]
+
+                if not bStereo2:
+                    if (errX2**2 + errY2**2) > 5.991 * sigmaSquare2:
+                        continue
+                else:
+                    u2_r = u2 - self.mpCurrentKeyFrame.mbf * invz2
+                    errX2_r = u2_r - kp2_ur
+                    if (errX2**2 + errY2**2 + errX2_r**2) > 7.8 * sigmaSquare2:
                         continue
 
-                    ratioDist = dist2 / dist1
-                    ratioOctave = mpCurrentKeyFrame.mvScaleFactors[kp1.octave] / pKF2.mvScaleFactors[kp2.octave]
+                # Check scale consistency
+                normal1, normal2 = x3D - Ow1, x3D - Ow2
+                dist1, dist2 = np.linalg.norm(normal1), np.linalg.norm(normal2)
 
-                    if ratioDist * ratioFactor < ratioOctave or ratioDist > ratioOctave * ratioFactor:
-                        continue
+                if dist1 == 0 or dist2 == 0:
+                    continue
 
-                    # Create MapPoint
-                    pMP = MapPoint(x3D, mpCurrentKeyFrame, mpMap)
-                    pMP.add_observation(mpCurrentKeyFrame, idx1)
-                    pMP.add_observation(pKF2, idx2)
+                ratioDist = dist2 / dist1
+                ratioOctave = self.mpCurrentKeyFrame.mvScaleFactors[kp1.octave] / pKF2.mvScaleFactors[kp2.octave]
 
-                    mpCurrentKeyFrame.add_map_point(pMP, idx1)
-                    pKF2.add_map_point(pMP, idx2)
+                if ratioDist * ratioFactor < ratioOctave or ratioDist > ratioOctave * ratioFactor:
+                    continue
 
-                    pMP.compute_distinctive_descriptors()
-                    pMP.update_normal_and_depth()
+                # Create MapPoint
+                pMP = MapPoint(x3D, self.mpCurrentKeyFrame, self.mpMap)
+                pMP.add_observation(self.mpCurrentKeyFrame, idx1)
+                pMP.add_observation(pKF2, idx2)
 
-                    mpMap.add_map_point(pMP)
-                    mlpRecentAddedMapPoints.append(pMP)
-                    nnew += 1
+                self.mpCurrentKeyFrame.add_map_point(pMP, idx1)
+                pKF2.add_map_point(pMP, idx2)
+
+                pMP.compute_distinctive_descriptors()
+                pMP.update_normal_and_depth()
+
+                self.mpMap.add_map_point(pMP)
+                self.mlpRecentAddedMapPoints.append(pMP)
+                nnew += 1
 
     def compute_f12(self, pKF1, pKF2):
         # Get rotations and translations
@@ -292,22 +370,22 @@ class LocalMapping:
         return F12
 
     def skew_symmetric_matrix(self, v):
-        return np.array([
-            [0, -v[2], v[1]],
-            [v[2], 0, -v[0]],
-            [-v[1], v[0], 0]
-        ], dtype=np.float)
+        return np.array([[0., -v[2][0], v[1][0]],
+                         [v[2][0], 0., -v[0][0]],
+                         [-v[1][0], v[0][0], 0.]])
 
     def search_in_neighbors(self):
 
         # Retrieve neighbor keyframes
         nn = 10
         vpNeighKFs = self.mpCurrentKeyFrame.get_best_covisibility_key_frames(nn)
+
         vpTargetKFs = []
 
         for pKFi in vpNeighKFs:
             if pKFi.is_bad() or pKFi.mnFuseTargetForKF == self.mpCurrentKeyFrame.mnId:
                 continue
+
             vpTargetKFs.append(pKFi)
             pKFi.mnFuseTargetForKF = self.mpCurrentKeyFrame.mnId
 
@@ -326,7 +404,7 @@ class LocalMapping:
         vpMapPointMatches = self.mpCurrentKeyFrame.get_map_point_matches()
         matcher = ORBMatcher()
         for pKFi in vpTargetKFs:
-            matcher.fuse_pkf_mp(pKFi, vpMapPointMatches, th=3.0)
+            matcher.fuse_pkf_mp(pKFi, list(vpMapPointMatches.values()), th=3.0)
 
         # Search matches by projection from target KFs in current KF
         vpFuseCandidates = []

@@ -270,7 +270,7 @@ class Optimizer:
         lLocalKeyFrames = [pKF]
         pKF.mnBALocalForKF = pKF.mnId
 
-        vNeighKFs = pKF.get_vector_covisible_keyframes()
+        vNeighKFs = pKF.get_vector_covisible_key_frames()
         for pKFi in vNeighKFs:
             pKFi.mnBALocalForKF = pKF.mnId
             if not pKFi.is_bad():
@@ -280,7 +280,7 @@ class Optimizer:
         lLocalMapPoints = []
         for pKFi in lLocalKeyFrames:
             vpMPs = pKFi.get_map_point_matches()
-            for pMP in vpMPs:
+            for i, pMP in vpMPs.items():
                 if not pMP.is_bad() and pMP.mnBALocalForKF != pKF.mnId:
                     lLocalMapPoints.append(pMP)
                     pMP.mnBALocalForKF = pKF.mnId
@@ -297,8 +297,7 @@ class Optimizer:
 
         # Setup optimizer
         optimizer = g2o.SparseOptimizer()
-        linear_solver = g2o.LinearSolverEigen(g2o.BlockSolverSE3.PoseMatrixType)
-        solver_ptr = g2o.BlockSolverSE3(linear_solver)
+        solver_ptr = g2o.BlockSolverSE3(g2o.LinearSolverEigenSE3())
         solver = g2o.OptimizationAlgorithmLevenberg(solver_ptr)
         optimizer.set_algorithm(solver)
 
@@ -339,8 +338,9 @@ class Optimizer:
         thHuberStereo = np.sqrt(7.815)
 
         for pMP in lLocalMapPoints:
-            vPoint = g2o.VertexSBAPointXYZ()
-            vPoint.set_estimate(to_vector3d(pMP.get_world_pos()))
+
+            vPoint = g2o.VertexPointXYZ()
+            vPoint.set_estimate(pMP.get_world_pos())
             id = pMP.mnId + maxKFid + 1
             vPoint.set_id(id)
             vPoint.set_marginalized(True)
@@ -350,45 +350,26 @@ class Optimizer:
             for pKFi, idx in observations.items():
                 if not pKFi.is_bad():
                     kpUn = pKFi.mvKeysUn[idx]
-
-                    obs = np.array([kpUn.pt[0], kpUn.pt[1], pKFi.mvuRight[idx]])
-                    e = g2o.EdgeStereoSE3ProjectXYZ()
-                    e.set_vertex(0, optimizer.vertex(id))
-                    e.set_vertex(1, optimizer.vertex(pKFi.mnId))
-                    e.set_measurement(obs)
-                    invSigma2 = pKFi.mvInvLevelSigma2[kpUn.octave]
-                    e.set_information(np.identity(3) * invSigma2)
-                    rk = g2o.RobustKernelHuber()
-                    e.set_robust_kernel(rk)
-                    rk.set_delta(thHuberStereo)
-                    e.fx = pKFi.fx
-                    e.fy = pKFi.fy
-                    e.cx = pKFi.cx
-                    e.cy = pKFi.cy
-                    e.bf = pKFi.mbf
-                    optimizer.add_edge(e)
-                    vpEdgesStereo.append(e)
-                    vpEdgeKFStereo.append(pKFi)
-                    vpMapPointEdgeStereo.append(pMP)
-                    obs = np.array([kpUn.pt[0], kpUn.pt[1], pKFi.mvuRight[idx]])
-                    e = g2o.EdgeStereoSE3ProjectXYZ()
-                    e.set_vertex(0, optimizer.vertex(id))
-                    e.set_vertex(1, optimizer.vertex(pKFi.mnId))
-                    e.set_measurement(obs)
-                    invSigma2 = pKFi.mvInvLevelSigma2[kpUn.octave]
-                    e.set_information(np.identity(3) * invSigma2)
-                    rk = g2o.RobustKernelHuber()
-                    e.set_robust_kernel(rk)
-                    rk.set_delta(thHuberStereo)
-                    e.fx = pKFi.fx
-                    e.fy = pKFi.fy
-                    e.cx = pKFi.cx
-                    e.cy = pKFi.cy
-                    e.bf = pKFi.mbf
-                    optimizer.add_edge(e)
-                    vpEdgesStereo.append(e)
-                    vpEdgeKFStereo.append(pKFi)
-                    vpMapPointEdgeStereo.append(pMP)
+                    if pKFi.mvuRight[i] > 0:
+                        obs = np.array([kpUn.pt[0], kpUn.pt[1], pKFi.mvuRight[idx]])
+                        e = g2o.EdgeStereoSE3ProjectXYZ()
+                        e.set_vertex(0, optimizer.vertex(id))
+                        e.set_vertex(1, optimizer.vertex(pKFi.mnId))
+                        e.set_measurement(obs)
+                        invSigma2 = pKFi.mvInvLevelSigma2[kpUn.octave]
+                        e.set_information(np.identity(3) * invSigma2)
+                        rk = g2o.RobustKernelHuber()
+                        e.set_robust_kernel(rk)
+                        rk.set_delta(thHuberStereo)
+                        e.fx = pKFi.fx
+                        e.fy = pKFi.fy
+                        e.cx = pKFi.cx
+                        e.cy = pKFi.cy
+                        e.bf = pKFi.mbf
+                        optimizer.add_edge(e)
+                        vpEdgesStereo.append(e)
+                        vpEdgeKFStereo.append(pKFi)
+                        vpMapPointEdgeStereo.append(pMP)
 
         if pbStopFlag and pbStopFlag[0]:
             return
@@ -454,5 +435,5 @@ class Optimizer:
         # Update MapPoints
         for pMP in lLocalMapPoints:
             vPoint = optimizer.vertex(pMP.mnId + maxKFid + 1)
-            pMP.set_world_pos(self.convertor.to_mat(vPoint.estimate()))
+            pMP.set_world_pos(np.expand_dims(vPoint.estimate(), axis=1))
             pMP.update_normal_and_depth()

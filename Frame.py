@@ -119,6 +119,7 @@ class Frame:
         new_frame.mvInvScaleFactors = frame.mvInvScaleFactors
         new_frame.mvLevelSigma2 = frame.mvLevelSigma2
         new_frame.mvInvLevelSigma2 = frame.mvInvLevelSigma2
+        new_frame.mGrid = frame.mGrid
 
         if frame.mTcw is not None:
             new_frame.set_pose(frame.mTcw)
@@ -200,7 +201,7 @@ class Frame:
     """
     def compute_stereo_matches(self):
 
-        self.mvuRight = [0] * self.N
+        self.mvuRight = [-1] * self.N
         self.mvDepth = [-1] * self.N
 
         thOrbDist = (TH_HIGH  + TH_LOW)/2;

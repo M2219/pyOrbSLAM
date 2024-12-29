@@ -70,10 +70,6 @@ class Viewer:
         d_cam.SetBounds(pangolin.Attach(0.0), pangolin.Attach(1.0), pangolin.Attach.Pix(175), pangolin.Attach(1.0), -1024.0 / 768.0)
         d_cam.SetHandler(pangolin.Handler3D(s_cam))
 
-        # Initialize OpenGL Matrix for pose (identity)
-        # Create an OpenCV window for the current frame
-        #cv2.namedWindow("POrbSLAM: Current Frame")
-
         # Control Flags
         bFollow = True
         bLocalizationMode = False
@@ -125,9 +121,9 @@ class Viewer:
             pangolin.FinishFrame()
 
             # Show current frame (dummy implementation)
-            img = self.mpFrameDrawer.draw_frame()
-            cv2.imshow("pyOrbSLAM: Current Frame", img)
-            cv2.waitKey(int(self.mT))
+            #img = self.mpFrameDrawer.draw_frame()
+            #cv2.imshow("pyOrbSLAM: Current Frame", img)
+            #cv2.waitKey(int(self.mT))
 
             if menuReset:
                 menuShowGraph = True
@@ -146,7 +142,7 @@ class Viewer:
             # Add stop conditions (if needed)
             if self.stop():
                 while self.is_stopped():
-                    time.sleep(3)
+                    time.sleep(3000)
 
             if self.check_finish():
                 break;

@@ -27,14 +27,7 @@ class MapDrawer:
         self.mPointSize = fSettings["Viewer.PointSize"]
         self.mCameraSize = fSettings["Viewer.CameraSize"]
         self.mCameraLineWidth = fSettings["Viewer.CameraLineWidth"]
-
-        self.mKeyFrameSize = 1.0
-        self.mKeyFrameLineWidth = 1.0
-        self.mGraphLineWidth = 1.0
-        self.mCameraSize = 1.0
-        self.mCameraLineWidth = 1.0
         self.mCameraPose = None
-
         self.mpMap = pMap
 
     def draw_map_points(self):
@@ -86,6 +79,7 @@ class MapDrawer:
         if bDrawKF:
             for pKF in vpKFs:
                 Twc = pKF.get_pose_inverse().T  # Assuming Twc is a numpy array
+                print(Twc)
                 gl.glPushMatrix()
                 gl.glMultMatrixf(Twc.flatten())  # Flatten for OpenGL compatibility
                 gl.glLineWidth(self.mKeyFrameLineWidth)
