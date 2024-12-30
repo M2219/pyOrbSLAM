@@ -5,7 +5,8 @@ class MapPoint:
     nNextId = 0  # Class-level variable for unique MapPoint IDs
     mGlobalMutex = threading.Lock()
 
-    def __init__(self, Pos, pRefKF, pMap):
+    def __init__(self, Pos, pRefKF, pMap, idxF=None, kframe_bool=True):
+
         """
         Initializes a MapPoint.
 
@@ -14,15 +15,56 @@ class MapPoint:
             pRefKF (KeyFrame): Reference KeyFrame.
             pMap (Map): The map to which this MapPoint belongs.
         """
+
         self.mMutexPos = threading.Lock()
         self.mMutexFeatures = threading.Lock()
 
-        self.mWorldPos = Pos.copy()  # Copy the position
-        self.mpRefKF = pRefKF  # Reference KeyFrame
         self.mpMap = pMap  # Map reference
 
-        self.mnFirstKFid = pRefKF.mnId  # ID of the first KeyFrame observing this MapPoint
-        self.mnFirstFrame = pRefKF.mnFrameId  # ID of the first frame observing this MapPoint
+        if kframe_bool:
+
+            self.mnFirstKFid = pRefKF.mnId  # ID of the first KeyFrame observing this MapPoint
+            self.mnFirstFrame = pRefKF.mnFrameId  # ID of the first frame observing this MapPoint
+            self.mpRefKF = pRefKF  # Reference KeyFrame
+
+            self.mfMinDistance = 0  # Minimum distance to the camera
+            self.mfMaxDistance = 0  # Maximum distance to the camera
+
+            self.mWorldPos = Pos.copy()  # Copy the position
+            self.mNormalVector = np.zeros((3, 1), dtype=np.float32)  # Normal vector
+
+            self.mDescriptor = pRefKF.mDescriptors[idxF]
+
+            self.mnId = MapPoint.nNextId
+            with self.mpMap.mMutexPointCreation:
+                MapPoint.nNextId += 1
+
+        else:
+
+            self.mnFirstKFid = -1  # ID of the first KeyFrame observing this MapPoint
+            self.mnFirstFrame = pRefKF.mnId  # ID of the first frame observing this MapPoint
+            self.mpRefKF = None  # Reference KeyFrame
+
+            self.mWorldPos = Pos.copy()  # Copy the position
+            Ow = pRefKF.get_camera_center()
+            self.mNormalVector = self.mWorldPos - Ow
+            self.mNormalVector = self.mNormalVector / np.linalg.norm(self.mNormalVector)
+
+            PC = Pos - Ow
+            dist = np.linalg.norm(PC)
+
+            level = pRefKF.mvKeysUn[idxF].octave
+            levelScaleFactor = pRefKF.mvScaleFactors[level]
+            nLevels = pRefKF.mnScaleLevels
+
+            self.mfMaxDistance = dist * levelScaleFactor
+            self.mfMinDistance = self.mfMaxDistance / pRefKF.mvScaleFactors[nLevels-1]
+
+            self.mDescriptor = pRefKF.mDescriptors[idxF]
+
+            self.mnId = MapPoint.nNextId
+            with self.mpMap.mMutexPointCreation:
+                MapPoint.nNextId += 1
 
         self.nObs = 0  # Number of observations
         self.mnTrackReferenceForFrame = 0  # Tracking reference for the current frame
@@ -42,16 +84,6 @@ class MapPoint:
         self.mpReplaced = None  # Pointer to replaced MapPoint
         self.mObservations = {}  # Pointer to replaced MapPoint
         self.mbTrackInView = None
-
-        self.mfMinDistance = 0  # Minimum distance to the camera
-        self.mfMaxDistance = 0  # Maximum distance to the camera
-
-        self.mNormalVector = np.zeros((3, 1), dtype=np.float32)  # Normal vector
-
-        # Assign a unique ID with thread safety# Important --------------------------------------------------------
-        self.mnId = MapPoint.nNextId
-        with self.mpMap.mMutexPointCreation:
-            MapPoint.nNextId += 1
 
     def descriptor_distance(self, a, b):
         xor = np.bitwise_xor(a, b)
@@ -232,7 +264,7 @@ class MapPoint:
 
     def get_descriptor(self):
         with self.mMutexFeatures:
-            return self.mDescriptor.copy() if self.mDescriptor is not None else None
+            return self.mDescriptor.copy()
 
     def get_index_in_key_frame(self, pKF):
         with self.mMutexFeatures:

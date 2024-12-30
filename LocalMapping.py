@@ -41,8 +41,8 @@ class LocalMapping:
         Main loop of the Local Mapping thread.
         """
         self.mbFinished = False
-
         while True:
+
             # Mark Local Mapping as busy
             self.set_accept_key_frames(False)
             time.sleep(0.2)
@@ -332,7 +332,7 @@ class LocalMapping:
                     continue
 
                 # Create MapPoint
-                pMP = MapPoint(x3D, self.mpCurrentKeyFrame, self.mpMap)
+                pMP = MapPoint(x3D, self.mpCurrentKeyFrame, self.mpMap, idxF=idx1, kframe_bool=True)
                 pMP.add_observation(self.mpCurrentKeyFrame, idx1)
                 pMP.add_observation(pKF2, idx2)
 

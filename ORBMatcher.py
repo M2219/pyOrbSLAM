@@ -358,80 +358,82 @@ class ORBMatcher:
         b_backward = -tlc[2] > current_frame.mb
 
         for i in list(last_frame.mvpMapPoints.keys()):
+            if i in last_frame.mvpMapPoints:
+                pMP = last_frame.mvpMapPoints[i]
+                if not last_frame.mvbOutlier[i]:
+                    # Project
+                    x3Dw = pMP.get_world_pos()
+                    x3Dc = Rcw @ x3Dw + np.expand_dims(tcw, axis=0).T
+                    xc, yc, zc = x3Dc[0][0], x3Dc[1][0], x3Dc[2][0]
+                    invzc = 1.0 / zc
 
-            pMP = last_frame.mvpMapPoints[i]
-            if not last_frame.mvbOutlier[i]:
-                # Project
-                x3Dw = pMP.get_world_pos()
-                x3Dc = Rcw @ x3Dw + np.expand_dims(tcw, axis=0).T
-                xc, yc, zc = x3Dc[0][0], x3Dc[1][0], x3Dc[2][0]
-                invzc = 1.0 / zc
+                    if invzc < 0:
+                        continue
 
-                if invzc < 0:
-                    continue
+                    u = current_frame.fx * xc * invzc + current_frame.cx
+                    v = current_frame.fy * yc * invzc + current_frame.cy
 
-                u = current_frame.fx * xc * invzc + current_frame.cx
-                v = current_frame.fy * yc * invzc + current_frame.cy
+                    if u < current_frame.mnMinX or u > current_frame.mnMaxX:
+                        continue
+                    if v < current_frame.mnMinY or v > current_frame.mnMaxY:
+                        continue
 
-                if u < current_frame.mnMinX or u > current_frame.mnMaxX:
-                    continue
-                if v < current_frame.mnMinY or v > current_frame.mnMaxY:
-                    continue
+                    n_last_octave = last_frame.mvKeys[i].octave
 
-                n_last_octave = last_frame.mvKeys[i].octave
 
-                # Search in a window. Size depends on scale
-                radius = th * current_frame.mvScaleFactors[n_last_octave]
-                #print(b_forward, b_backward)
-                if b_forward:
-                    v_indices2 = current_frame.get_features_in_area(u, v, radius, n_last_octave, -1)
+                    # Search in a window. Size depends on scale
+                    radius = th * current_frame.mvScaleFactors[n_last_octave]
+                    #print(b_forward, b_backward)
+                    if b_forward:
+                        v_indices2 = current_frame.get_features_in_area(u, v, radius, n_last_octave, -1)
 
-                elif b_backward:
-                    v_indices2 = current_frame.get_features_in_area(u, v, radius, 0, n_last_octave)
+                    elif b_backward:
+                        v_indices2 = current_frame.get_features_in_area(u, v, radius, 0, n_last_octave)
 
-                else:
-                    v_indices2 = current_frame.get_features_in_area(u, v, radius, n_last_octave - 1, n_last_octave + 1)
+                    else:
+                        v_indices2 = current_frame.get_features_in_area(u, v, radius, n_last_octave - 1, n_last_octave + 1)
 
-                if not v_indices2:
-                    continue
+                    if not v_indices2:
+                        continue
 
-                dMP = pMP.get_descriptor()
+                    dMP = pMP.get_descriptor()
 
-                best_dist = 256
-                best_idx2 = -1
+                    best_dist = 256
+                    best_idx2 = -1
 
-                for i2 in v_indices2:
-                    if i2 in current_frame.mvpMapPoints:
-                        if current_frame.mvpMapPoints[i2].observations() > 0:
-                           continue
+                    for i2 in v_indices2:
+                        if i2 in current_frame.mvpMapPoints:
+                            if current_frame.mvpMapPoints[i2].observations() > 0:
+                               continue
 
-                    if current_frame.mvuRight[i2] > 0:
-                        ur = u - current_frame.mbf * invzc
-                        er = abs(ur - current_frame.mvuRight[i2])
-                        if er > radius:
-                            continue
+                        if current_frame.mvuRight[i2] > 0:
+                            ur = u - current_frame.mbf * invzc
+                            er = abs(ur - current_frame.mvuRight[i2])
+                            if er > radius:
+                                continue
 
-                    d = current_frame.mDescriptors[i2]
-                    dist = self.descriptor_distance(dMP, d)
+                        d = current_frame.mDescriptors[i2]
+                        dist = self.descriptor_distance(dMP, d)
 
-                    if dist < best_dist:
-                        best_dist = dist
-                        best_idx2 = i2
+                        if dist < best_dist:
+                            best_dist = dist
+                            best_idx2 = i2
 
-                if best_dist <= TH_HIGH:
-                    current_frame.mvpMapPoints[best_idx2] = pMP
-                    current_frame.mvbOutlier[best_idx2] = False
-                    n_matches += 1
 
-                    if self.mbCheckOrientation:
-                        rot = last_frame.mvKeysUn[i].angle - current_frame.mvKeysUn[best_idx2].angle
-                        if rot < 0.0:
-                            rot += 360.0
-                        bin_idx = round(rot * factor)
-                        if bin_idx == HISTO_LENGTH:
-                            bin_idx = 0
-                        assert 0 <= bin_idx < HISTO_LENGTH
-                        rot_hist[bin_idx].append(best_idx2)
+                    if best_dist <= TH_HIGH:
+                        current_frame.mvpMapPoints[best_idx2] = pMP
+                        current_frame.mvbOutlier[best_idx2] = False
+                        n_matches += 1
+
+                        if self.mbCheckOrientation:
+                            rot = last_frame.mvKeysUn[i].angle - current_frame.mvKeysUn[best_idx2].angle
+                            if rot < 0.0:
+                                rot += 360.0
+                            bin_idx = round(rot * factor)
+                            if bin_idx == HISTO_LENGTH:
+                                bin_idx = 0
+                            assert 0 <= bin_idx < HISTO_LENGTH
+                            rot_hist[bin_idx].append(best_idx2)
 
         # Apply rotation consistency
         if self.mbCheckOrientation:
@@ -781,9 +783,9 @@ class ORBMatcher:
                             rotHist[bin_idx].append(idx1)
 
             elif f1key < f2key:
-                f1key = next(f1key)
+                f1key = next(f1it)
             else:
-                f2key = next(f2key)
+                f2key = next(f2it)
 
         if self.mbCheckOrientation:
             # Find the top three maxima in the orientation histogram

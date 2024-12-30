@@ -268,15 +268,15 @@ class KeyFrame:
             return self.mvpOrderedConnectedKeyFrames[:N]
 
     def get_covisibles_by_weight(self, w):
-        with self.mMutexConnections:
+        with self.mMutexConnections:  # Use Python's `with` for thread safety
             if not self.mvpOrderedConnectedKeyFrames:
                 return []
 
-        n = bisect_right(self.mvOrderedWeights, w)
-        if n == len(self.mvOrderedWeights):
-            return []
-        else:
-            return self.mvpOrderedConnectedKeyFrames[:n]
+            index = bisect_right(self.mvOrderedWeights, w, key=lambda x: -x)  # Reverse logic for descending order
+            if index == len(self.mvOrderedWeights):
+                return []
+            else:
+                return self.mvpOrderedConnectedKeyFrames[:index]
 
     def add_map_point(self, pMP, indx):
         with self.mMutexFeatures:
@@ -709,7 +709,7 @@ if __name__ == "__main__":
             # Unproject the 2D point to 3D
             x3D = mCurrentFrame.unproject_stereo(i)
             # Create a new MapPoint
-            pNewMP = MapPoint(x3D, pKFini, mpMap)
+            pNewMP = MapPoint(x3D, pKFini, mpMap, idxF=i, kframe_bool=True)
             # Add observation to the new MapPoint
             pNewMP.add_observation(pKFini, i)
             # Associate the new MapPoint with the KeyFrame

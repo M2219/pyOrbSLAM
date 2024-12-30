@@ -76,7 +76,6 @@ class MapDrawer:
         z = w * 0.6
 
         vpKFs = self.mpMap.get_all_key_frames()
-        #print("--->", len(vpKFs))
         if bDrawKF:
             for pKF in vpKFs:
                 Twc = pKF.get_pose_inverse().T  # Assuming Twc is a numpy array
@@ -108,6 +107,7 @@ class MapDrawer:
                 gl.glPopMatrix()
 
         if bDrawGraph:
+
             gl.glLineWidth(self.mGraphLineWidth)
             gl.glColor4f(0.0, 1.0, 0.0, 0.6)  # Green color with transparency
             gl.glBegin(gl.GL_LINES)
@@ -115,28 +115,30 @@ class MapDrawer:
             for pKF in vpKFs:
                 # Covisibility Graph
                 vCovKFs = pKF.get_covisibles_by_weight(100)
-                Ow = pKF.get_camera_center()  # Assuming Ow is a numpy array
+                Ow = pKF.get_camera_center()[:, 0]  # Assuming Ow is a numpy array
+                #print(Ow)
                 if vCovKFs:
                     for covKF in vCovKFs:
                         if covKF.mnId < pKF.mnId:
                             continue
-                        Ow2 = covKF.get_camera_center()
+                        Ow2 = covKF.get_camera_center()[:, 0]
                         gl.glVertex3f(Ow[0], Ow[1], Ow[2])
                         gl.glVertex3f(Ow2[0], Ow2[1], Ow2[2])
 
                 # Spanning tree
                 pParent = pKF.get_parent()
                 if pParent:
-                    Owp = pParent.get_camera_center()
+                    Owp = pParent.get_camera_center()[:, 0]
                     gl.glVertex3f(Ow[0], Ow[1], Ow[2])
                     gl.glVertex3f(Owp[0], Owp[1], Owp[2])
+
 
                 # Loops
                 sLoopKFs = pKF.get_loop_edges()
                 for loopKF in sLoopKFs:
                     if loopKF.mnId < pKF.mnId:
                         continue
-                    Owl = loopKF.get_camera_center()
+                    Owl = loopKF.get_camera_center()[:, 0]
                     gl.glVertex3f(Ow[0], Ow[1], Ow[2])
                     gl.glVertex3f(Owl[0], Owl[1], Owl[2])
 
@@ -157,7 +159,7 @@ class MapDrawer:
         # Apply the camera transformation matrix
         #output_help_to_file(r'test.txt', Twc)
 
-        gl.glMultMatrixf(Twc.Matrix().flatten())  # Assuming Twc.m is a flattened matrix compatible with OpenGL
+        gl.glMultMatrixf(Twc.Matrix().T.flatten())  # Assuming Twc.m is a flattened matrix compatible with OpenGL
 
         gl.glLineWidth(self.mCameraLineWidth)
         gl.glColor3f(0.0, 1.0, 0.0)  # Green color for the camera

@@ -7,8 +7,8 @@ class Map:
         self.mMutexPointCreation = threading.Lock()
         self.mMutexMap = threading.Lock()
 
-        self.mspKeyFrames = set()  # Set of KeyFrames
-        self.mspMapPoints = set()  # Set of MapPoints
+        self.mspKeyFrames = []  # Set of KeyFrames
+        self.mspMapPoints = []  # Set of MapPoints
         self.mvpReferenceMapPoints = []  # List of reference MapPoints
         self.mvpKeyFrameOrigins = []  # List of KeyFrame origins
         self.mnMaxKFid = 0  # Maximum KeyFrame ID
@@ -16,23 +16,23 @@ class Map:
 
     def add_key_frame(self, pKF):
         with self.mMutexMap:
-            self.mspKeyFrames.add(pKF)
+            self.mspKeyFrames.append(pKF)
             if pKF.mnId > self.mnMaxKFid:
                 self.mnMaxKFid = pKF.mnId
 
     def add_map_point(self, pMP):
 
         with self.mMutexMap:
-            self.mspMapPoints.add(pMP)
+            self.mspMapPoints.append(pMP)
 
     def erase_map_point(self, pMP):
 
         with self.mMutexMap:
-            self.mspMapPoints.discard(pMP)
+            self.mspMapPoints.remove(pMP)
 
     def erase_key_frame(self, pKF):
         with self.mMutexMap:
-            self.mspKeyFrames.discard(pKF)
+            self.mspKeyFrames.remove(pKF)
 
     def set_reference_map_points(self, vpMPs):
         with self.mMutexMap:
@@ -48,11 +48,11 @@ class Map:
 
     def get_all_key_frames(self):
         with self.mMutexMap:
-            return list(self.mspKeyFrames)
+            return list(dict.fromkeys(self.mspKeyFrames))
 
     def get_all_map_points(self):
         with self.mMutexMap:
-            return list(self.mspMapPoints)
+            return list(dict.fromkeys(self.mspMapPoints))
 
     def map_points_in_map(self):
         with self.mMutexMap:
@@ -71,13 +71,13 @@ class Map:
             return self.mnMaxKFid
 
     def clear(self):
-        #for pMP in list(self.mspMapPoints):
-        #    self.mspMapPoints.remove(pMP)
+        for pMP in list(self.mspMapPoints):
+            self.mspMapPoints.remove(pMP)
 
         for pKF in list(self.mspKeyFrames):
             self.mspKeyFrames.remove(pKF)
 
-        #self.mspMapPoints.clear()
+        self.mspMapPoints.clear()
         self.mspKeyFrames.clear()
         self.mnMaxKFid = 0
         self.mvpReferenceMapPoints.clear()

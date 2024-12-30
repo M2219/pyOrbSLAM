@@ -336,7 +336,7 @@ class Tracking:
                 z = self.mCurrentFrame.mvDepth[i]
                 if z > 0:
                     x3D = self.mCurrentFrame.unproject_stereo(i)
-                    self.pNewMP = MapPoint(x3D, pKFini, self.mpMap)
+                    self.pNewMP = MapPoint(x3D, pKFini, self.mpMap, idxF=i, kframe_bool=True)
                     self.pNewMP.add_observation(pKFini, i)
                     pKFini.add_map_point(self.pNewMP, i)
                     self.pNewMP.compute_distinctive_descriptors()
@@ -539,7 +539,8 @@ class Tracking:
         Search for local map points and update their visibility and tracking status.
         """
         # Do not search map points already matched
-        for i, pMP in self.mCurrentFrame.mvpMapPoints.items():
+        for i in list(self.mCurrentFrame.mvpMapPoints.keys()):
+            pMP = self.mCurrentFrame.mvpMapPoints[i]
             if pMP.is_bad():
                 del self.mCurrentFrame.mvpMapPoints[i]
                 del self.mCurrentFrame.mvbOutlier[i]
@@ -677,7 +678,7 @@ class Tracking:
 
                 if bCreateNew:
                     x3D = self.mCurrentFrame.unproject_stereo(i)
-                    pNewMP = MapPoint(x3D, pKF, self.mpMap)
+                    pNewMP = MapPoint(x3D, pKF, self.mpMap, idxF=i, kframe_bool=True)
                     pNewMP.add_observation(pKF, i)
                     pKF.add_map_point(pNewMP, i)
                     pNewMP.compute_distinctive_descriptors()
@@ -806,7 +807,7 @@ class Tracking:
 
             if bCreateNew:
                 x3D = self.mLastFrame.unproject_stereo(i)
-                pNewMP = MapPoint(x3D, self.mpMap, self.mLastFrame, i)
+                pNewMP = MapPoint(x3D, self.mLastFrame, self.mpMap, idxF=i, kframe_bool=False)
 
                 self.mLastFrame.mvpMapPoints[i] = pNewMP
                 self.mLastFrame.mvbOutlier[i] = False
