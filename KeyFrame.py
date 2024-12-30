@@ -292,10 +292,12 @@ class KeyFrame:
     def erase_map_point_match(self, idx):
         if idx in self.mvpMapPoints:
             del self.mvpMapPoints[idx]
+            del self.mvbOutlier[idx]
+
 
     def replace_map_point_match(self, idx, pMP):
         self.mvpMapPoints[idx] = pMP
-        self.mvbOutlier[idx] = True
+        self.mvbOutlier[idx] = False
 
     def get_map_points(self):
         with self.mMutexFeatures:

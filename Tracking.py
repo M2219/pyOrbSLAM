@@ -116,7 +116,7 @@ class Tracking:
 
         # Run tracking
         self.track()
-
+        #print("--> ", len(self.mpMap.get_all_map_points()))
         #print("tlen mvpMapPoints", len(self.mLastFrame.mvpMapPoints))
         #print("tlen mvbOutlier", len(self.mLastFrame.mvbOutlier))
 
@@ -377,7 +377,7 @@ class Tracking:
             pRep = pMP.get_replaced() # print and check
             if pRep is not None:
                 self.mLastFrame.mvpMapPoints[i] = pRep
-                self.mLastFrame.Outlier[i] = False
+                self.mLastFrame.mvbOutlier[i] = False
 
     def track_reference_key_frame(self):
         """

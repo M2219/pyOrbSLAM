@@ -56,8 +56,7 @@ class Viewer:
         )
 
         # Create interactive panel
-        panel = pangolin.CreatePanel("menu").SetBounds(pangolin.Attach(0.0), pangolin.Attach(1.0), pangolin.Attach(0.0), pangolin.Attach.Pix(175))
-
+        #panel = pangolin.CreatePanel("menu").SetBounds(pangolin.Attach(0.0), pangolin.Attach(1.0), pangolin.Attach(0.0), pangolin.Attach.Pix(175))
         menuFollowCamera = True
         menuShowPoints =  True
         menuShowKeyFrames =  True
@@ -70,17 +69,18 @@ class Viewer:
         d_cam.SetBounds(pangolin.Attach(0.0), pangolin.Attach(1.0), pangolin.Attach.Pix(175), pangolin.Attach(1.0), -1024.0 / 768.0)
         d_cam.SetHandler(pangolin.Handler3D(s_cam))
 
+
         # Control Flags
         bFollow = True
         bLocalizationMode = False
 
         while True:
-
+            time.sleep(0.2)
             gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
 
             M = self.mpMapDrawer.get_current_OpenGL_camera_matrix()
 
-            Twc = pangolin.OpenGlMatrix(M)
+            Twc = pangolin.OpenGlMatrix(M.T)
 
             if menuFollowCamera and bFollow:
                 s_cam.Follow(Twc)
@@ -121,9 +121,9 @@ class Viewer:
             pangolin.FinishFrame()
 
             # Show current frame (dummy implementation)
-            #img = self.mpFrameDrawer.draw_frame()
-            #cv2.imshow("pyOrbSLAM: Current Frame", img)
-            #cv2.waitKey(int(self.mT))
+            img = self.mpFrameDrawer.draw_frame()
+            cv2.imshow("pyOrbSLAM: Current Frame", img)
+            cv2.waitKey(int(self.mT))
 
             if menuReset:
                 menuShowGraph = True

@@ -71,13 +71,13 @@ class Map:
             return self.mnMaxKFid
 
     def clear(self):
-        for pMP in list(self.mspMapPoints):
-            self.mspMapPoints.remove(pMP)
+        #for pMP in list(self.mspMapPoints):
+        #    self.mspMapPoints.remove(pMP)
 
         for pKF in list(self.mspKeyFrames):
             self.mspKeyFrames.remove(pKF)
 
-        self.mspMapPoints.clear()
+        #self.mspMapPoints.clear()
         self.mspKeyFrames.clear()
         self.mnMaxKFid = 0
         self.mvpReferenceMapPoints.clear()

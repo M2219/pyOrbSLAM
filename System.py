@@ -1,5 +1,5 @@
 import threading
-
+import time
 import cv2
 import yaml
 
@@ -60,12 +60,10 @@ class System:
         #self.mptLoopClosing_thread = threading.Thread(target=self.mpLoopCloser.run)
         #print(self.bUseViewer)
 
-        #if self.bUseViewer:
-        #    self.mpViewer = Viewer(self, self.mpFrameDrawer, self.mpMapDrawer, self.mpTracker, fsSettings)
-        #    self.mptViewer_thread = threading.Thread(target=self.mpViewer.run)
-        #    self.mptViewer_thread.start()
-
-
+        if self.bUseViewer:
+            self.mpViewer = Viewer(self, self.mpFrameDrawer, self.mpMapDrawer, self.mpTracker, fsSettings)
+            self.mptViewer_thread = threading.Thread(target=self.mpViewer.run)
+            self.mptViewer_thread.start()
 
 
         #self.mpTracker.set_local_mapper(self.mpLocalMapper)
@@ -118,6 +116,14 @@ class System:
 
         return Tcw
 
+    def activate_localization_mode(self):
+        with self.mMutexMode:
+            self.mbActivateLocalizationMode = True
+
+    def deactivate_localization_mode(self):
+        with self.mMutexMode:
+            self.mbDeactivateLocalizationMode = True
+
 
 if __name__ == "__main__":
 
@@ -131,7 +137,7 @@ if __name__ == "__main__":
 
     SLAM = System(strVocFile, strSettingsFile, "Stereo", bUseViewer=True)
 
-    for i in range(10):
+    for i in range(200):
         print("FFFFFFFFFFFFFFFFFFFrame = ", i)
         mleft = cv2.imread(leftImages[i], cv2.IMREAD_GRAYSCALE)
         mright = cv2.imread(rightImages[i], cv2.IMREAD_GRAYSCALE)

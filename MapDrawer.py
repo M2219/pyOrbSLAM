@@ -33,10 +33,11 @@ class MapDrawer:
     def draw_map_points(self):
         # Retrieve map points and reference map points
         vpMPs = self.mpMap.get_all_map_points()
+
+        #print("--->", len(vpMPs))
+
         vpRefMPs = self.mpMap.get_reference_map_points()
-
         spRefMPs = set(vpRefMPs)
-
         if not vpMPs:
             return
 
@@ -75,11 +76,11 @@ class MapDrawer:
         z = w * 0.6
 
         vpKFs = self.mpMap.get_all_key_frames()
-
+        #print("--->", len(vpKFs))
         if bDrawKF:
             for pKF in vpKFs:
                 Twc = pKF.get_pose_inverse().T  # Assuming Twc is a numpy array
-                print(Twc)
+                #print("TWC ---> ", Twc)
                 gl.glPushMatrix()
                 gl.glMultMatrixf(Twc.flatten())  # Flatten for OpenGL compatibility
                 gl.glLineWidth(self.mKeyFrameLineWidth)
@@ -156,7 +157,7 @@ class MapDrawer:
         # Apply the camera transformation matrix
         #output_help_to_file(r'test.txt', Twc)
 
-        gl.glMultMatrixd(Twc.Matrix().flatten())  # Assuming Twc.m is a flattened matrix compatible with OpenGL
+        gl.glMultMatrixf(Twc.Matrix().flatten())  # Assuming Twc.m is a flattened matrix compatible with OpenGL
 
         gl.glLineWidth(self.mCameraLineWidth)
         gl.glColor3f(0.0, 1.0, 0.0)  # Green color for the camera

@@ -45,7 +45,7 @@ class LocalMapping:
         while True:
             # Mark Local Mapping as busy
             self.set_accept_key_frames(False)
-            time.sleep(0.3)
+            time.sleep(0.2)
             # Check if there are keyframes in the queue
             if self.check_new_key_frames():
 
@@ -475,6 +475,16 @@ class LocalMapping:
             # Mark keyframe as bad if 90% of its MapPoints are redundant
             if nRedundantObservations > 0.9 * nMPs:
                 pKF.set_bad_flag()
+
+
+    def request_stop(self):
+        # Lock mMutexStop and set mbStopRequested to True
+        with self.mMutexStop:
+            self.mbStopRequested = True
+
+        # Lock mMutexNewKFs and set mbAbortBA to True
+        with self.mMutexNewKFs:
+            self.mbAbortBA = True
 
     def stop_requested(self):
         """
