@@ -75,7 +75,7 @@ class Viewer:
         bLocalizationMode = False
 
         while True:
-            time.sleep(0.2)
+            #time.sleep(0.2)
             gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
 
             M = self.mpMapDrawer.get_current_OpenGL_camera_matrix()
@@ -122,8 +122,8 @@ class Viewer:
 
             # Show current frame (dummy implementation)
             img = self.mpFrameDrawer.draw_frame()
-            #cv2.imshow("pyOrbSLAM: Current Frame", img)
-            #cv2.waitKey(int(self.mT))
+            cv2.imshow("pyOrbSLAM: Current Frame", img)
+            cv2.waitKey(int(self.mT))
 
             if menuReset:
                 menuShowGraph = True
