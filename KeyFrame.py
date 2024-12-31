@@ -603,8 +603,6 @@ def compute_image_bounds(imLeft, mK, mDistCoef):
 
     return mnMinX, mnMaxX, mnMinY, mnMaxY
 
-
-
 if __name__ == "__main__":
 
     import yaml

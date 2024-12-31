@@ -74,7 +74,10 @@ class Frame:
         self.N = len(self.mvKeys)
 
         self.undistort_keypoints()
+        tt = time.time()
         self.compute_stereo_matches()
+        print(f"------> time stereo matching : {time.time()-tt}")
+
         self.mvpMapPoints = [None] * self.N
         self.mvbOutlier = [False] * self.N
 
@@ -198,6 +201,7 @@ class Frame:
                 self.mGrid[nGridPosX][nGridPosY].append(i)
 
     """
+
     def compute_stereo_matches(self):
 
         self.mvuRight = [-1] * self.N

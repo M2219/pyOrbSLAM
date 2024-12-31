@@ -28,7 +28,6 @@ class Tracking:
         self.mpKeyFrameDB = pKFDB
         self.mpInitializer = None
         self.mpSystem = pSys
-        self.mpViewer = None
         self.mpFrameDrawer = pFrameDrawer
         self.mpMapDrawer = pMapDrawer
         self.mpMap = pMap
@@ -84,6 +83,10 @@ class Tracking:
     def mpLocalMapper(self):
         return self.mpSystem.mpLocalMapper
 
+    @property
+    def mpViewer(self):
+        return self.mpSystem.mpViewer
+
     def grab_image_stereo(self, mImGray, imGrayRight, timestamp):
         ##############
         # just for the first image should be transfer to stereo and done for the first loop than frame_args passes to the
@@ -105,9 +108,11 @@ class Tracking:
         self.frame_args = [self.fx, self.fy, self.cx, self.cy, self.invfx, self.invfy,
           mfGridElementWidthInv, mfGridElementHeightInv, mnMinX, mnMaxX, mnMinY, mnMaxY, FRAME_GRID_ROWS, FRAME_GRID_COLS]
 
-
+        tt = time.time()
         self.mCurrentFrame = Frame(self.mImGray, self.imGrayRight, timestamp, self.mpORBExtractorLeft, self.mpORBExtractorRight, self.mpORBVocabulary,
                         self.mK, self.mDistCoef, self.mbf, self.mThDepth, self.frame_args)
+
+        print(f"------> time frame : {time.time()-tt}")
 
         # Run tracking
         tt = time.time()
@@ -828,9 +833,9 @@ class Tracking:
         Reset the entire tracking system, including mapping, loop closing, and database clearing.
         """
         print("System Resetting")
-        if mpViewer:
-            mpViewer.request_stop()
-            while not mpViewer.is_stopped():
+        if self.mpViewer:
+            self.mpViewer.request_stop()
+            while not self.mpViewer.is_stopped():
                 time.sleep(0.003)  # Sleep for 3 milliseconds
 
         # Reset Local Mapping
@@ -855,11 +860,6 @@ class Tracking:
         self.KeyFrame.nNextId = 0
         self.Frame.nNextId = 0
         self.mState = "NO_IMAGES_YET"
-
-        # Clear Initializer if it exists
-        #if self.mpInitializer:
-        #    del mpInitializer
-        #    mpInitializer = None
 
         # Clear tracking-related lists
         self.mlRelativeFramePoses.clear()

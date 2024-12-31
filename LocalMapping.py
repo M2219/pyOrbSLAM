@@ -484,6 +484,16 @@ class LocalMapping:
             if nRedundantObservations > 0.9 * nMPs:
                 pKF.set_bad_flag()
 
+    def request_reset(self):
+        # Set the reset request flag
+        with self.mMutexReset:
+            self.mbResetRequested = True
+        # Wait until the reset request flag is cleared
+        while True:
+            with self.mMutexReset:
+                if not self.mbResetRequested:
+                    break
+            time.sleep(0.003)  # Sleep for 3 milliseconds
 
     def request_stop(self):
         # Lock mMutexStop and set mbStopRequested to True
@@ -540,6 +550,10 @@ class LocalMapping:
                 self.mlpRecentAddedMapPoints.clear()
                 self.mbResetRequested = False
 
+    def request_finish(self):
+        with self.mMutexFinish:
+            self.mbFinishRequested = True
+
     def set_finish(self):
         with self.mMutexFinish:
             self.mbFinished = True
@@ -547,6 +561,9 @@ class LocalMapping:
         with self.mMutexStop:
             self.mbStopped = True
 
+    def is_finished(self):
+        with self.mMutexFinish:
+            return self.mbFinished
 
 if __name__ == "__main__":
 

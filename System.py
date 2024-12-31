@@ -3,6 +3,9 @@ import time
 import cv2
 import yaml
 
+import pypangolin as pangolin
+import numpy as np
+
 from pyDBoW.TemplatedVocabulary import TemplatedVocabulary
 from KeyFrameDatabase import KeyFrameDatabase
 from Map import Map
@@ -123,6 +126,66 @@ class System:
     def deactivate_localization_mode(self):
         with self.mMutexMode:
             self.mbDeactivateLocalizationMode = True
+
+    def save_trajectory_kitti(self, filename):
+
+        print(f"Saving camera trajectory to {filename} ...")
+
+        # Get all keyframes and sort by ID
+        vpKFs = self.mpMap.get_all_key_frames()
+        vpKFs_s = sorted(vpKFs, key=lambda kf: kf.mnId)
+
+        # Transform all keyframes so that the first keyframe is at the origin
+        Two = vpKFs_s[0].get_pose_inverse()
+
+        with open(filename, "w") as f:
+            for lit, lRit, lT in zip(self.mpTracker.mlRelativeFramePoses,
+                                     self.mpTracker.mlpReferences,
+                                     self.mpTracker.mlFrameTimes):
+                pKF = lRit
+
+                Trw = np.eye(4, dtype=np.float32)
+
+                while pKF.is_bad():
+                    Trw = np.dot(Trw, pKF.mTcp)
+                    pKF = pKF.get_parent()
+
+                Trw = np.dot(np.dot(Trw, pKF.get_pose()), Two)
+
+                Tcw = np.dot(lit, Trw)
+                Rwc = Tcw[:3, :3].T
+                twc = -np.dot(Rwc, Tcw[:3, 3])
+
+                f.write("{:.9f} {:.9f} {:.9f} {:.9f} {:.9f} {:.9f} {:.9f} {:.9f} {:.9f} {:.9f} {:.9f} {:.9f}\n".format(
+                    Rwc[0, 0], Rwc[0, 1], Rwc[0, 2], twc[0],
+                    Rwc[1, 0], Rwc[1, 1], Rwc[1, 2], twc[1],
+                    Rwc[2, 0], Rwc[2, 1], Rwc[2, 2], twc[2]
+                ))
+
+        print("Trajectory saved!")
+
+    def shutdown(self):
+        # Request all components to finish
+        self.mpLocalMapper.request_finish()
+        #self.mpLoopCloser.request_finish()
+
+        if self.mpViewer:
+            self.mpViewer.request_finish()
+            while not self.mpViewer.is_finished():
+                time.sleep(0.005)  # Sleep for 5 milliseconds
+
+        # Wait until all threads have effectively stopped
+        while (not self.mpLocalMapper.is_finished()):
+               #or not self.mpLoopCloser.is_finished() or self.mpLoopCloser.is_running_gba()):
+            time.sleep(0.005)  # Sleep for 5 milliseconds
+
+        if self.mpViewer:
+            self.mptViewer_thread.join()
+
+        #    pangolin.BindToContext("ORB-SLAM2: Map Viewer")
+
+        self.mptLocalMapping_thread.join()
+        #self.mpLoopCloser_thread.join()
 
 
 if __name__ == "__main__":
