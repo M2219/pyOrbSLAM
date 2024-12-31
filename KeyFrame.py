@@ -4,6 +4,7 @@ import math
 import numpy as np
 import cv2
 
+from ordered_set import OrderedSet
 from bisect import bisect_right
 
 class KeyFrame:
@@ -86,8 +87,8 @@ class KeyFrame:
         self.mHalfBaseline = F.mb / 2
         self.mpMap = pMap
 
-        self.mspChildrens = set()
-        self.mspLoopEdges = set()
+        self.mspChildrens = []
+        self.mspLoopEdges = []
         # Assign a unique ID
         self.mnId = KeyFrame.nNextId
         KeyFrame.nNextId += 1
@@ -158,7 +159,10 @@ class KeyFrame:
             vpMP = self.mvpMapPoints.copy()
 
         # Count observations of MapPoints in other KeyFrames
-        for i, pMP in vpMP.items():
+        for pMP in vpMP:
+
+            if not pMP:
+                continue
 
             if pMP.is_bad():
                 continue
@@ -281,38 +285,47 @@ class KeyFrame:
     def add_map_point(self, pMP, indx):
         with self.mMutexFeatures:
             self.mvpMapPoints[indx] = pMP
-            self.mvbOutlier[indx] = False
 
     def erase_map_point_match_by_index(self, idx):
         with self.mMutexFeatures:
-            if idx in self.mvpMapPoints:
-               del self.mvpMapPoints[idx]
-               del self.mvbOutlier[idx]
+           self.mvpMapPoints[idx] = None
 
     def erase_map_point_match(self, idx):
-        if idx in self.mvpMapPoints:
-            del self.mvpMapPoints[idx]
-            del self.mvbOutlier[idx]
+        if idx >=0:
+            self.mvpMapPoints[idx] = None
+
+    def erase_map_point_match_by_pmp(self, pMP):
+        idx = pMP.get_index_in_key_frame(self)
+        if idx >=0:
+            self.mvpMapPoints[idx] = None
 
 
     def replace_map_point_match(self, idx, pMP):
         self.mvpMapPoints[idx] = pMP
-        self.mvbOutlier[idx] = False
 
     def get_map_points(self):
         with self.mMutexFeatures:
-            return {pMP for i, pMP in self.mvpMapPoints.items() if not pMP.is_bad()}
+            s = []
+            for pMP in mvpMapPoint:
+                if not pMP:
+                    continue
+
+                if not pMP.is_bad():
+                    s.append(pMP)
+
+        return OrderedSet(s)
 
     def tracked_map_points(self, minObs):
         with self.mMutexFeatures:
             nPoints = 0
-            for i, pMP in self.mvpMapPoints.items():
-                if not pMP.is_bad():
-                    if minObs > 0 and list(pMP.get_observations().values())[0] >= minObs:
-                        nPoints += 1
-                    elif minObs == 0:
-                        nPoints += 1
-            return nPoints
+            for pMP in self.mvpMapPoints:
+                if pMP:
+                    if not pMP.is_bad():
+                        if minObs > 0 and pMP.observations() >= minObs:
+                            nPoints += 1
+                        elif minObs == 0:
+                            nPoints += 1
+        return nPoints
 
     def get_map_point_matches(self):
         with self.mMutexFeatures:
@@ -320,27 +333,24 @@ class KeyFrame:
 
     def get_map_point(self, idx):
         with self.mMutexFeatures:
-            if idx in self.mvpMapPoints:
-                return self.mvpMapPoints[idx]
-            else:
-                return None
+            return self.mvpMapPoints[idx]
 
     def add_child(self, pKF):
         with self.mMutexConnections:
-            self.mspChildrens.add(pKF)
+            self.mspChildrens.append(pKF)
 
     def erase_child(self, pKF):
         with self.mMutexConnections:
-            self.mspChildrens.discard(pKF)
+            self.mspChildrens.remove(pKF)
 
     def change_parent(self, pKF):
         with self.mMutexConnections:
             self.mpParent = pKF
-            pKF.AddChild(self)
+            pKF.add_child(self)
 
     def get_childs(self):
         with self.mMutexConnections:
-            return set(self.mspChildrens)
+            return OrderedSet(self.mspChildrens)
 
     def get_parent(self):
         with self.mMutexConnections:
@@ -353,11 +363,11 @@ class KeyFrame:
     def add_loop_edge(self, pKF):
         with self.mMutexConnections:
             self.mbNotErase = True
-            self.mspLoopEdges.add(pKF)
+            self.mspLoopEdges.append(pKF)
 
     def get_loop_edges(self):
         with self.mMutexConnections:
-            return self.mspLoopEdges
+            return OrderedSet(self.mspLoopEdges)
 
     def set_not_erase(self):
         with self.mMutexConnections:
@@ -369,7 +379,7 @@ class KeyFrame:
                 self.mbNotErase = False
 
         if self.mbToBeErased:
-            self.SetBadFlag()
+            self.set_bad_flag()
 
     def set_bad_flag(self):
         """
@@ -394,7 +404,7 @@ class KeyFrame:
                 self.mvpOrderedConnectedKeyFrames.clear()
 
                 # Update Spanning Tree
-                sParentCandidates = {self.mpParent}
+                sParentCandidates = [self.mpParent]
 
                 while self.mspChildrens:
                     bContinue = False
@@ -421,7 +431,7 @@ class KeyFrame:
 
                     if bContinue:
                         pC.ChangeParent(pP)
-                        sParentCandidates.add(pC)
+                        sParentCandidates.append(pC)
                         self.mspChildrens.remove(pC)
                     else:
                         break
@@ -433,12 +443,12 @@ class KeyFrame:
                         pKF.ChangeParent(self.mpParent)
 
                 # Remove from parent's children and mark as bad
-                self.mpParent.EraseChild(self)
-                self.mTcp = self.Tcw @ self.mpParent.GetPoseInverse()
+                self.mpParent.erase_child(self)
+                self.mTcp = self.Tcw @ self.mpParent.get_pose_inverse()
                 self.mbBad = True
 
             # Erase from the map and database
-            self.mpMap.EraseKeyFrame(self)
+            self.mpMap.erase_key_frame(self)
             self.mpKeyFrameDB.erase(self)
 
 
@@ -451,13 +461,12 @@ class KeyFrame:
         bUpdate = False
 
         with self.mMutexConnections:
-
             if pKF in self.mConnectedKeyFrameWeights:
                 del self.mConnectedKeyFrameWeights[pKF]
                 bUpdate = True
 
         if bUpdate:
-            self.UpdateBestCovisibles()
+            self.update_best_covisibles()
 
     def get_features_in_area(self, x, y, r):
         """

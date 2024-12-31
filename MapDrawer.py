@@ -38,7 +38,7 @@ class MapDrawer:
 
         vpRefMPs = self.mpMap.get_reference_map_points()
         spRefMPs = set(vpRefMPs)
-        if not vpMPs:
+        if len(vpMPs) == 0:
             return
 
         # Draw non-reference map points

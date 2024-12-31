@@ -22,8 +22,7 @@ class ORBMatcher:
 
     def search_by_BoW_kf_f(self, kf, frame):
         vpMapPointsKF = kf.get_map_point_matches()
-
-        vpMapPointMatches = {}
+        vpMapPointMatches = [None] * frame.N
 
         vFeatVecKF = kf.mFeatVec
 
@@ -56,7 +55,7 @@ class ORBMatcher:
 
                     for idxKF in vIndicesKF:
                         realIdxKF = idxKF
-                        if realIdxKF in vpMapPointsKF:
+                        if vpMapPointsKF[realIdxKF]:
                             pMP = vpMapPointsKF[realIdxKF]
                         else:
                             continue
@@ -73,7 +72,7 @@ class ORBMatcher:
                         for idxF in vIndicesF:
                             realIdxF = idxF
 
-                            if realIdxF in vpMapPointMatches:
+                            if vpMapPointMatches[realIdxF]:
                                 continue
 
                             dF = frame.mDescriptors[realIdxF]
@@ -123,7 +122,7 @@ class ORBMatcher:
                 if i in [ind1, ind2, ind3]:
                     continue
                 for idx in rotHist[i]:
-                    del vpMapPointMatches[idx]
+                    vpMapPointMatches[idx] = None
                     nMatches -= 1
 
         return nMatches, vpMapPointMatches
@@ -162,7 +161,7 @@ class ORBMatcher:
                 if f1[0] == f2[0]:
                     for idx1 in f1[1]:
                         pMP1 = vpMapPoints1[idx1]
-                        if not pMP1 or pMP1.isBad():
+                        if not pMP1 or pMP1.is_bad():
                             continue
 
                         d1 = Descriptors1[idx1]
@@ -173,7 +172,7 @@ class ORBMatcher:
 
                         for idx2 in f2[1]:
                             pMP2 = vpMapPoints2[idx2]
-                            if vbMatched2[idx2] or not pMP2 or pMP2.isBad():
+                            if vbMatched2[idx2] or not pMP2 or pMP2.is_bad():
                                 continue
 
                             d2 = Descriptors2[idx2]
@@ -275,7 +274,7 @@ class ORBMatcher:
 
             # Find the best and second-best matches
             for idx in v_indices:
-                if (idx in frame.mvpMapPoints):
+                if frame.mvpMapPoints[idx]:
                     if frame.mvpMapPoints[idx].observations() > 0:
                         continue
 
@@ -304,7 +303,6 @@ class ORBMatcher:
                     continue
 
                 frame.mvpMapPoints[best_idx] = pMP
-                frame.mvbOutlier[best_idx] = False
                 n_matches += 1
 
         return n_matches
@@ -357,10 +355,11 @@ class ORBMatcher:
         b_forward = tlc[2] > current_frame.mb
         b_backward = -tlc[2] > current_frame.mb
 
-        for i in list(last_frame.mvpMapPoints.keys()):
-            if i in last_frame.mvpMapPoints:
-                pMP = last_frame.mvpMapPoints[i]
+        for i in range(last_frame.N):
+            pMP = last_frame.mvpMapPoints[i]
+            if pMP:
                 if not last_frame.mvbOutlier[i]:
+
                     # Project
                     x3Dw = pMP.get_world_pos()
                     x3Dc = Rcw @ x3Dw + np.expand_dims(tcw, axis=0).T
@@ -402,7 +401,7 @@ class ORBMatcher:
                     best_idx2 = -1
 
                     for i2 in v_indices2:
-                        if i2 in current_frame.mvpMapPoints:
+                        if current_frame.mvpMapPoints[i2]:
                             if current_frame.mvpMapPoints[i2].observations() > 0:
                                continue
 
@@ -422,7 +421,6 @@ class ORBMatcher:
 
                     if best_dist <= TH_HIGH:
                         current_frame.mvpMapPoints[best_idx2] = pMP
-                        current_frame.mvbOutlier[best_idx2] = False
                         n_matches += 1
 
                         if self.mbCheckOrientation:
@@ -442,8 +440,7 @@ class ORBMatcher:
             for i in range(HISTO_LENGTH):
                 if i not in (ind1, ind2, ind3):
                     for idx in rot_hist[i]:
-                        del current_frame.mvpMapPoints[idx]
-                        del current_frame.mvbOutlier[idx]
+                        current_frame.mvpMapPoints[idx] = None
                         n_matches -= 1
 
         return n_matches
@@ -585,8 +582,11 @@ class ORBMatcher:
         Ow = pKF.get_camera_center()
 
         nFused = 0
-        for i in range(len(vpMapPoints)):
-            pMP = vpMapPoints[i]
+        for pMP in vpMapPoints:
+
+            if not pMP:
+                continue
+
             if pMP.is_bad() or pMP.is_in_key_frame(pKF):
                 continue
 

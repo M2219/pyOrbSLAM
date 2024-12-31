@@ -75,8 +75,8 @@ class Frame:
 
         self.undistort_keypoints()
         self.compute_stereo_matches()
-        self.mvpMapPoints = {}
-        self.mvbOutlier = {}
+        self.mvpMapPoints = [None] * self.N
+        self.mvbOutlier = [False] * self.N
 
         #tt = time.time()
 
@@ -138,7 +138,6 @@ class Frame:
     def compute_BoW(self):
 
          self.mBowVec, self.mFeatVec = self.mpORBvocabulary.transform(self.mDescriptors, 4)
-
 
     def set_pose(self, Tcw_):
         self.mTcw = Tcw_.copy()

@@ -45,7 +45,7 @@ class LocalMapping:
 
             # Mark Local Mapping as busy
             self.set_accept_key_frames(False)
-            time.sleep(0.2)
+            time.sleep(0.1)
             # Check if there are keyframes in the queue
             if self.check_new_key_frames():
 
@@ -121,14 +121,15 @@ class LocalMapping:
 
         vpMapPointMatches = self.mpCurrentKeyFrame.get_map_point_matches()
 
-        for i, pMP in vpMapPointMatches.items():
-            if not pMP.is_bad():
-                if not pMP.is_in_key_frame(self.mpCurrentKeyFrame):
-                    pMP.add_observation(self.mpCurrentKeyFrame, i)
-                    pMP.update_normal_and_depth()
-                    pMP.compute_distinctive_descriptors()
-                else:
-                    self.mlpRecentAddedMapPoints.append(pMP)
+        for i, pMP in enumerate(vpMapPointMatches):
+            if pMP:
+                if not pMP.is_bad():
+                    if not pMP.is_in_key_frame(self.mpCurrentKeyFrame):
+                        pMP.add_observation(self.mpCurrentKeyFrame, i)
+                        pMP.update_normal_and_depth()
+                        pMP.compute_distinctive_descriptors()
+                    else:
+                        self.mlpRecentAddedMapPoints.append(pMP)
 
         self.mpCurrentKeyFrame.update_connections();
         self.mpMap.add_key_frame(self.mpCurrentKeyFrame);
@@ -404,13 +405,16 @@ class LocalMapping:
         vpMapPointMatches = self.mpCurrentKeyFrame.get_map_point_matches()
         matcher = ORBMatcher()
         for pKFi in vpTargetKFs:
-            matcher.fuse_pkf_mp(pKFi, list(vpMapPointMatches.values()), th=3.0)
+            matcher.fuse_pkf_mp(pKFi, vpMapPointMatches, th=3.0)
 
         # Search matches by projection from target KFs in current KF
         vpFuseCandidates = []
         for pKFi in vpTargetKFs:
             vpMapPointsKFi = pKFi.get_map_point_matches()
-            for i, pMP in vpMapPointsKFi.items():
+            for pMP in vpMapPointsKFi:
+                if not pMP:
+                    continue
+
                 if pMP.is_bad() or pMP.mnFuseCandidateForKF == self.mpCurrentKeyFrame.mnId:
                     continue
 
@@ -420,10 +424,11 @@ class LocalMapping:
         matcher.fuse_pkf_mp(self.mpCurrentKeyFrame, vpFuseCandidates, th=3.0)
         # Update points
         vpMapPointMatches = self.mpCurrentKeyFrame.get_map_point_matches()
-        for i, pMP in vpMapPointMatches.items():
-            if not pMP.is_bad():
-                pMP.compute_distinctive_descriptors()
-                pMP.update_normal_and_depth()
+        for pMP in vpMapPointMatches:
+            if pMP:
+                if not pMP.is_bad():
+                    pMP.compute_distinctive_descriptors()
+                    pMP.update_normal_and_depth()
 
         # Update connections in covisibility graph
         self.mpCurrentKeyFrame.update_connections()
@@ -448,29 +453,32 @@ class LocalMapping:
             nRedundantObservations = 0
             nMPs = 0
 
-            for i, pMP in vpMapPoints.items():
-                if not pMP.is_bad():
-                    if pKF.mvDepth[i] > pKF.mThDepth or pKF.mvDepth[i] < 0:
-                        continue
+            for i, pMP in enumerate(vpMapPoints):
 
-                    nMPs += 1
-                    if pMP.observations() > thObs:
-                        scaleLevel = pKF.mvKeysUn[i].octave
-                        observations = pMP.get_observations()
+                if pMP:
 
-                        nObs = 0
-                        for pKFi, idx in observations.items():
-                            if pKFi == pKF:
-                                continue
-                            scaleLeveli = pKFi.mvKeysUn[idx].octave
+                    if not pMP.is_bad():
+                        if pKF.mvDepth[i] > pKF.mThDepth or pKF.mvDepth[i] < 0:
+                            continue
 
-                            if scaleLeveli <= scaleLevel + 1:
-                                nObs += 1
-                                if nObs >= thObs:
-                                    break
+                        nMPs += 1
+                        if pMP.observations() > thObs:
+                            scaleLevel = pKF.mvKeysUn[i].octave
+                            observations = pMP.get_observations()
 
-                        if nObs >= thObs:
-                            nRedundantObservations += 1
+                            nObs = 0
+                            for pKFi, idx in observations.items():
+                                if pKFi == pKF:
+                                    continue
+                                scaleLeveli = pKFi.mvKeysUn[idx].octave
+
+                                if scaleLeveli <= scaleLevel + 1:
+                                    nObs += 1
+                                    if nObs >= thObs:
+                                        break
+
+                            if nObs >= thObs:
+                                nRedundantObservations += 1
 
             # Mark keyframe as bad if 90% of its MapPoints are redundant
             if nRedundantObservations > 0.9 * nMPs:

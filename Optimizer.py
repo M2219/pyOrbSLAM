@@ -188,32 +188,32 @@ class Optimizer:
 
         # Add edges for map points
         with MapPoint.mGlobalMutex:  # Ensure thread safety
-            for i, pMP in pFrame.mvpMapPoints.items():
+            for i in range(pFrame.N):
+                pMP = pFrame.mvpMapPoints[i]
+                if pMP:
+                    if pFrame.mvuRight[i] > 0:
+                        nInitialCorrespondences += 1
+                        pFrame.mvbOutlier[i] = False
 
-                pFrame.mvbOutlier[i] = False
+                        obs = np.array([pFrame.mvKeysUn[i].pt[0], pFrame.mvKeysUn[i].pt[1], pFrame.mvuRight[i]])
+                        #print(obs)
+                        e = g2o.EdgeStereoSE3ProjectXYZOnlyPose()
+                        e.set_vertex(0, optimizer.vertex(0))
+                        e.set_measurement(obs)
+                        invSigma2 = pFrame.mvInvLevelSigma2[pFrame.mvKeysUn[i].octave]
+                        e.set_information(np.eye(3) * invSigma2)
 
-                if pFrame.mvuRight[i] > 0:
-                    nInitialCorrespondences += 1
+                        e.set_robust_kernel(g2o.RobustKernelHuber(deltaStereo))
 
-                    obs = np.array([pFrame.mvKeysUn[i].pt[0], pFrame.mvKeysUn[i].pt[1], pFrame.mvuRight[i]])
-                    #print(obs)
-                    e = g2o.EdgeStereoSE3ProjectXYZOnlyPose()
-                    e.set_vertex(0, optimizer.vertex(0))
-                    e.set_measurement(obs)
-                    invSigma2 = pFrame.mvInvLevelSigma2[pFrame.mvKeysUn[i].octave]
-                    e.set_information(np.eye(3) * invSigma2)
-
-                    e.set_robust_kernel(g2o.RobustKernelHuber(deltaStereo))
-
-                    e.fx = pFrame.fx
-                    e.fy = pFrame.fy
-                    e.cx = pFrame.cx
-                    e.cy = pFrame.cy
-                    e.bf = pFrame.mbf
-                    e.Xw = pMP.get_world_pos()
-                    optimizer.add_edge(e)
-                    vpEdgesStereo.append(e)
-                    vnIndexEdgeStereo.append(i)
+                        e.fx = pFrame.fx
+                        e.fy = pFrame.fy
+                        e.cx = pFrame.cx
+                        e.cy = pFrame.cy
+                        e.bf = pFrame.mbf
+                        e.Xw = pMP.get_world_pos()
+                        optimizer.add_edge(e)
+                        vpEdgesStereo.append(e)
+                        vnIndexEdgeStereo.append(i)
 
         if nInitialCorrespondences < 3:
             return 0
@@ -280,10 +280,11 @@ class Optimizer:
         lLocalMapPoints = []
         for pKFi in lLocalKeyFrames:
             vpMPs = pKFi.get_map_point_matches()
-            for i, pMP in vpMPs.items():
-                if not pMP.is_bad() and pMP.mnBALocalForKF != pKF.mnId:
-                    lLocalMapPoints.append(pMP)
-                    pMP.mnBALocalForKF = pKF.mnId
+            for pMP in vpMPs:
+                if pMP:
+                    if not pMP.is_bad() and pMP.mnBALocalForKF != pKF.mnId:
+                        lLocalMapPoints.append(pMP)
+                        pMP.mnBALocalForKF = pKF.mnId
 
         # Fixed Keyframes. Keyframes that see Local MapPoints but are not Local Keyframes
         lFixedCameras = []
@@ -350,7 +351,7 @@ class Optimizer:
             for pKFi, idx in observations.items():
                 if not pKFi.is_bad():
                     kpUn = pKFi.mvKeysUn[idx]
-                    if pKFi.mvuRight[i] > 0:
+                    if pKFi.mvuRight[idx] > 0:
                         obs = np.array([kpUn.pt[0], kpUn.pt[1], pKFi.mvuRight[idx]])
                         e = g2o.EdgeStereoSE3ProjectXYZ()
                         e.set_vertex(0, optimizer.vertex(id))
@@ -421,7 +422,7 @@ class Optimizer:
         # Get Map Mutex
         with pMap.mMutexMapUpdate:  # Assuming this is a threading.Lock()
             for pKFi, pMPi in vToErase:
-                pKFi.erase_map_point_match(pMPi)
+                pKFi.erase_map_point_match_by_pmp(pMPi)
                 pMPi.erase_observation(pKFi)
 
         # Recover optimized data

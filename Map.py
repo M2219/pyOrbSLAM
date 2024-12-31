@@ -1,4 +1,5 @@
 import threading
+from ordered_set import OrderedSet
 
 class Map:
     def __init__(self):
@@ -48,11 +49,11 @@ class Map:
 
     def get_all_key_frames(self):
         with self.mMutexMap:
-            return list(dict.fromkeys(self.mspKeyFrames))
+            return OrderedSet(self.mspKeyFrames)
 
     def get_all_map_points(self):
         with self.mMutexMap:
-            return list(dict.fromkeys(self.mspMapPoints))
+            return OrderedSet(self.mspMapPoints)
 
     def map_points_in_map(self):
         with self.mMutexMap:
