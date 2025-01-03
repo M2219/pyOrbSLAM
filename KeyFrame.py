@@ -8,17 +8,8 @@ from ordered_set import OrderedSet
 from bisect import bisect_right
 
 class KeyFrame:
-    nNextId = 0  # Class-level variable for unique KeyFrame IDs
-
+    nNextId = 0
     def __init__(self, F, pMap, pKFDB):
-        """
-        Initializes a KeyFrame object.
-
-        Args:
-            F (Frame): The frame from which the KeyFrame is created.
-            pMap (Map): The map to which this KeyFrame belongs.
-            pKFDB (KeyFrameDatabase): The KeyFrame database.
-        """
         self.mMutexPose = threading.Lock()
         self.mMutexConnections = threading.Lock()
         self.mMutexFeatures = threading.Lock()
@@ -77,8 +68,7 @@ class KeyFrame:
         self.mvbOutlier = F.mvbOutlier
 
         self.mRelocScore = 0.0
-        #print("self.mvpMapPoints", len(self.mvpMapPoints))
-        #print("self.mvbOutlier", len(self.mvbOutlier))
+
         self.mpKeyFrameDB = pKFDB
         self.mpORBvocabulary = F.mpORBvocabulary
         self.mbFirstConnection = True
@@ -91,7 +81,7 @@ class KeyFrame:
 
         self.mspChildrens = []
         self.mspLoopEdges = []
-        # Assign a unique ID
+
         self.mnId = KeyFrame.nNextId
         KeyFrame.nNextId += 1
 
@@ -104,6 +94,7 @@ class KeyFrame:
 
         self.mConnectedKeyFrameWeights = {}
         self.mvpOrderedConnectedKeyFrames = []
+
     def set_pose(self, Tcw_):
         with self.mMutexPose:
             self.Tcw = Tcw_.copy()
@@ -125,7 +116,6 @@ class KeyFrame:
             self.Cw = self.Cw
 
     def compute_BoW(self):
-
         self.mBowVec, self.mFeatVec = self.mpORBvocabulary.transform(self.F.mDescriptors, 4)
 
     def get_pose(self):
@@ -156,11 +146,9 @@ class KeyFrame:
         KFcounter = {}
         vpMP = []
 
-        # Get a copy of the map points
         with self.mMutexFeatures:
             vpMP = self.mvpMapPoints.copy()
 
-        # Count observations of MapPoints in other KeyFrames
         for pMP in vpMP:
 
             if not pMP:
@@ -179,11 +167,9 @@ class KeyFrame:
                 else:
                     KFcounter[pKF] = 1
 
-        # Return if no connected KeyFrames
         if not KFcounter:
             return
 
-        # Determine connections
         nmax = 0
         pKFmax = None
         threshold = 15
@@ -201,10 +187,8 @@ class KeyFrame:
             vPairs.append((nmax, pKFmax))
             pKFmax.add_connection(self, nmax)
 
-        # Sort pairs by weight
         vPairs.sort(reverse=True, key=lambda x: x[0])
 
-        # Update ordered connected KeyFrames and weights
         lKFs = [pair[1] for pair in vPairs]
         lWs = [pair[0] for pair in vPairs]
 
@@ -231,9 +215,6 @@ class KeyFrame:
         self.update_best_covisibles()
 
     def update_best_covisibles(self):
-        """
-        Updates the lists of ordered connected KeyFrames and their corresponding weights.
-        """
         with self.mMutexConnections:
 
             vPairs = [(weight, pKF) for pKF, weight in self.mConnectedKeyFrameWeights.items()]
@@ -243,15 +224,6 @@ class KeyFrame:
 
 
     def get_weight(pKF):
-        """
-        Retrieves the weight of the connection to the given KeyFrame.
-
-        Args:
-            pKF (KeyFrame): The connected KeyFrame.
-
-        Returns:
-            int: The weight of the connection, or 0 if not connected.
-        """
         with self.mMutexConnections:
             if pKF in self.mConnectedKeyFrameWeights:
                 return self.mConnectedKeyFrameWeights[pKF]
@@ -273,11 +245,11 @@ class KeyFrame:
             return self.mvpOrderedConnectedKeyFrames[:N]
 
     def get_covisibles_by_weight(self, w):
-        with self.mMutexConnections:  # Use Python's `with` for thread safety
+        with self.mMutexConnections:
             if not self.mvpOrderedConnectedKeyFrames:
                 return []
 
-            index = bisect_right(self.mvOrderedWeights, w, key=lambda x: -x)  # Reverse logic for descending order
+            index = bisect_right(self.mvOrderedWeights, w, key=lambda x: -x)
             if index == len(self.mvOrderedWeights):
                 return []
             else:
@@ -383,9 +355,6 @@ class KeyFrame:
             self.set_bad_flag()
 
     def set_bad_flag(self):
-        """
-        Marks the KeyFrame as bad, removes connections, updates the spanning tree, and erases references.
-        """
         if self.mnId == 0:
             return
         elif self.mbNotErase:
@@ -400,11 +369,10 @@ class KeyFrame:
 
         with self.mMutexConnections:
             with self.mMutexFeatures:
-                # Clear connections and features
+
                 self.mConnectedKeyFrameWeights.clear()
                 self.mvpOrderedConnectedKeyFrames.clear()
 
-                # Update Spanning Tree
                 sParentCandidates = [self.mpParent]
 
                 while self.mspChildrens:
@@ -417,7 +385,6 @@ class KeyFrame:
                         if pKF.is_bad():
                             continue
 
-                        # Check if a parent candidate is connected to the keyframe
                         vpConnected = pKF.GetVectorCovisibleKeyFrames()
                         for spc in sParentCandidates:
                             for vp in vpConnected:
@@ -429,7 +396,6 @@ class KeyFrame:
                                         max_weight = weight
                                         bContinue = True
 
-
                     if bContinue:
                         pC.ChangeParent(pP)
                         sParentCandidates.append(pC)
@@ -437,22 +403,16 @@ class KeyFrame:
                     else:
                         break
 
-
-                # Assign children with no covisibility links to the original parent
                 if self.mspChildrens:
                     for pKF in self.mspChildrens:
                         pKF.ChangeParent(self.mpParent)
 
-                # Remove from parent's children and mark as bad
                 self.mpParent.erase_child(self)
                 self.mTcp = self.Tcw @ self.mpParent.get_pose_inverse()
                 self.mbBad = True
 
-            # Erase from the map and database
             self.mpMap.erase_key_frame(self)
             self.mpKeyFrameDB.erase(self)
-
-
 
     def is_bad(self):
         with self.mMutexConnections:
@@ -470,17 +430,6 @@ class KeyFrame:
             self.update_best_covisibles()
 
     def get_features_in_area(self, x, y, r):
-        """
-        Retrieves the indices of features within a specified area.
-
-        Args:
-            x (float): X-coordinate of the center.
-            y (float): Y-coordinate of the center.
-            r (float): Radius of the area.
-
-        Returns:
-            list: Indices of the features within the area.
-        """
         vIndices = []
         nMinCellX = max(0, int(np.floor((x - self.mnMinX - r) * self.mfGridElementWidthInv)))
         if nMinCellX >= self.mnGridCols:
@@ -511,28 +460,9 @@ class KeyFrame:
         return vIndices
 
     def is_in_image(self, x, y):
-        """
-        Checks if a point is within the image bounds.
-
-        Args:
-            x (float): X-coordinate.
-            y (float): Y-coordinate.
-
-        Returns:
-            bool: True if the point is within the image bounds, False otherwise.
-        """
         return self.mnMinX <= x < self.mnMaxX and self.mnMinY <= y < self.mnMaxY
 
     def unproject_stereo(self, i):
-        """
-        Unprojects a 2D point to 3D using stereo depth.
-
-        Args:
-            i (int): Index of the point.
-
-        Returns:
-            np.ndarray: 3D coordinates in the world frame.
-        """
         z = self.mvDepth[i]
         if z > 0:
             u = self.mvKeys[i].pt[0]
@@ -547,15 +477,6 @@ class KeyFrame:
             return None
 
     def compute_scene_median_depth(self, q):
-        """
-        Computes the median depth of the scene.
-
-        Args:
-            q (int): Quantile to compute the median depth.
-
-        Returns:
-            float: Median depth value.
-        """
         with self.mMutexFeatures:
             with self.mMutexPose:
                 vpMapPoints = self.mvpMapPoints.copy()
@@ -574,159 +495,3 @@ class KeyFrame:
         vDepths.sort()
         return vDepths[(len(vDepths) - 1) // q]
 
-def compute_image_bounds(imLeft, mK, mDistCoef):
-
-    if mDistCoef[0][0] != 0.0:
-        mat = np.zeros((4, 2), dtype=np.float32)
-        mat[0, 0] = 0.0
-        mat[0, 1] = 0.0
-        mat[1, 0] = imLeft.shape[1]
-        mat[1, 1] = 0.0
-        mat[2, 0] = 0.0
-        mat[2, 1] = imLeft.shape[0]
-        mat[3, 0] = imLeft.shape[1]
-        mat[3, 1] = imLeft.shape[0]
-
-        mat = mat.reshape(-1, 1, 2)
-        mat = cv2.undistortPoints(mat, mK, mDistCoef, None, mK)
-        mat = mat.reshape(-1, 2)
-
-        mnMinX = min(mat[0, 0], mat[2, 0])
-        mnMaxX = max(mat[1, 0], mat[3, 0])
-        mnMinY = min(mat[0, 1], mat[1, 1])
-        mnMaxY = max(mat[2, 1], mat[3, 1])
-    else:
-
-        mnMinX = 0.0
-        mnMaxX = imLeft.shape[1]
-        mnMinY = 0.0
-        mnMaxY = imLeft.shape[0]
-
-    return mnMinX, mnMaxX, mnMinY, mnMaxY
-
-if __name__ == "__main__":
-
-    import yaml
-    from pyDBoW.TemplatedVocabulary import TemplatedVocabulary
-    from ORBExtractor import ORBExtractor
-    from stereo_kitti import LoadImages
-
-    vocabulary = TemplatedVocabulary(k=5, L=3, weighting="TF_IDF", scoring="L1_NORM")
-    vocabulary.load_from_text_file("./Vocabulary/ORBvoc.txt")
-
-    with open("configs/KITTI00-02.yaml", 'r') as f:
-        cfg = yaml.load(f, Loader=yaml.SafeLoader)
-
-    leftImages, rightImages, timeStamps = LoadImages("00")
-    nImages = len(leftImages)
-    mleft = cv2.imread(leftImages[0], cv2.IMREAD_GRAYSCALE)
-    mright = cv2.imread(rightImages[0], cv2.IMREAD_GRAYSCALE)
-    timestamp = float(timeStamps[0])
-
-    fx = cfg["Camera.fx"]
-    fy = cfg["Camera.fy"]
-    cx = cfg["Camera.cx"]
-    cy = cfg["Camera.cy"]
-
-    mk = np.eye(3, dtype=np.float32)
-    mk[0][0] = fx
-    mk[1][1] = fy
-    mk[0][2] = cx
-    mk[1][2] = cy
-
-
-    mDistCoef = np.ones((1, 4), dtype=np.float32)
-    mDistCoef[0][0] = cfg["Camera.k1"]
-    mDistCoef[0][1] = cfg["Camera.k2"]
-    mDistCoef[0][2] = cfg["Camera.p1"]
-    mDistCoef[0][3] = cfg["Camera.p2"]
-
-    mbf = cfg["Camera.bf"]
-    mThDepth = mbf * cfg["ThDepth"] / fx;
-
-    fps = cfg["Camera.fps"]
-    if fps == 0:
-        fps = 30
-
-    mMinFrames = 0
-    mMaxFrames = fps
-
-    nRGB = cfg["Camera.RGB"]
-    mbRGB = nRGB
-
-    nFeatures = cfg["ORBextractor.nFeatures"]
-    fScaleFactor = cfg["ORBextractor.scaleFactor"]
-    nLevels = cfg["ORBextractor.nLevels"]
-    fIniThFAST = cfg["ORBextractor.iniThFAST"]
-    fMinThFAST = cfg["ORBextractor.minThFAST"]
-
-    mORBExtractorLeft = ORBExtractor(nFeatures, fScaleFactor, nLevels, fIniThFAST, fMinThFAST)
-    mORBExtractorRight = ORBExtractor(nFeatures, fScaleFactor, nLevels, fIniThFAST, fMinThFAST)
-
-    keypointsL = []
-    keypointsL.append(cv2.KeyPoint(x=50.0, y=100.0, size=10.0, angle=45.0, response=0.8, octave=1, class_id=0))
-    keypointsL.append(cv2.KeyPoint(x=150.0, y=200.0, size=12.5, angle=90.0, response=0.9, octave=2, class_id=1))
-    keypointsL.append(cv2.KeyPoint(x=300.0, y=400.0, size=15.0, angle=-1.0, response=0.7, octave=3, class_id=2))
-
-
-    keypointsR = []
-    keypointsR.append(cv2.KeyPoint(x=54.0, y=140.0, size=13.0, angle=44.0, response=0.2, octave=1, class_id=0))
-    keypointsR.append(cv2.KeyPoint(x=110.0, y=220.0, size=15.5, angle=20.0, response=0.4, octave=2, class_id=1))
-    keypointsR.append(cv2.KeyPoint(x=200.0, y=440.0, size=17.0, angle=-11.0, response=0.6, octave=3, class_id=2))
-
-
-    mnMinX, mnMaxX, mnMinY, mnMaxY = compute_image_bounds(mleft, mk, mDistCoef)
-
-    FRAME_GRID_ROWS = 48
-    FRAME_GRID_COLS = 64
-
-    mfGridElementWidthInv = float(FRAME_GRID_COLS) / (mnMaxX - mnMinX)
-    mfGridElementHeightInv = float(FRAME_GRID_ROWS) / (mnMaxY - mnMinY)
-
-    invfx = 1.0 / fx
-    invfy = 1.0 / fy
-
-    # should be added to args
-    frame_args = [fx, fy, cx, cy, invfx, invfy, mfGridElementWidthInv, mfGridElementHeightInv, mnMinX, mnMaxX, mnMinY, mnMaxY, FRAME_GRID_ROWS, FRAME_GRID_COLS]
-
-    mTcw = np.eye(4, dtype=np.float32)
-    """
-    # Rotation
-    mTcw[0, 0] = 0.866
-    mTcw[0, 1] = -0.5
-    mTcw[1, 0] = 0.5
-    mTcw[1, 1] = 0.866
-    mTcw[2, 2] = 1.0
-
-    # Set translation
-    mTcw[0, 3] = 0.5
-    mTcw[1, 3] = 0.3
-    mTcw[2, 3] = 1.0
-    """
-    mCurrentFrame = Frame(mleft, mright, timestamp, mORBExtractorLeft, mORBExtractorRight, vocabulary, mk, mDistCoef, mbf, mThDepth, mTcw, frame_args)
-
-    mpMap = Map()
-    pKFDB = None
-
-    pKFini = KeyFrame(mCurrentFrame, mpMap, pKFDB)
-    mpMap.add_key_frame(pKFini)
-    print(mCurrentFrame.N)
-    for i in range(mCurrentFrame.N):
-        z = mCurrentFrame.mvDepth[i]
-        if z > 0:
-            # Unproject the 2D point to 3D
-            x3D = mCurrentFrame.unproject_stereo(i)
-            # Create a new MapPoint
-            pNewMP = MapPoint(x3D, pKFini, mpMap, idxF=i, kframe_bool=True)
-            # Add observation to the new MapPoint
-            pNewMP.add_observation(pKFini, i)
-            # Associate the new MapPoint with the KeyFrame
-            pKFini.add_map_point(pNewMP, i)
-            # Compute descriptors and update normals and depth
-            pNewMP.update_normal_and_depth()
-            # Add the MapPoint to the map
-            mpMap.add_map_point(pNewMP)
-            # Associate the MapPoint with the current frame
-            mCurrentFrame.mvpMapPoints[i] = pNewMP
-
-    print(f"New map created with {mpMap.map_points_in_map()} points")

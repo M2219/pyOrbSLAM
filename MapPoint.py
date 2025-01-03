@@ -2,36 +2,25 @@ import threading
 import numpy as np
 
 class MapPoint:
-    nNextId = 0  # Class-level variable for unique MapPoint IDs
+    nNextId = 0
     mGlobalMutex = threading.Lock()
-
     def __init__(self, Pos, pRefKF, pMap, idxF=None, kframe_bool=True):
-
-        """
-        Initializes a MapPoint.
-
-        Args:
-            Pos (np.ndarray): 3D position in the world (3x1 matrix).
-            pRefKF (KeyFrame): Reference KeyFrame.
-            pMap (Map): The map to which this MapPoint belongs.
-        """
-
         self.mMutexPos = threading.Lock()
         self.mMutexFeatures = threading.Lock()
 
-        self.mpMap = pMap  # Map reference
+        self.mpMap = pMap
 
         if kframe_bool:
 
-            self.mnFirstKFid = pRefKF.mnId  # ID of the first KeyFrame observing this MapPoint
-            self.mnFirstFrame = pRefKF.mnFrameId  # ID of the first frame observing this MapPoint
-            self.mpRefKF = pRefKF  # Reference KeyFrame
+            self.mnFirstKFid = pRefKF.mnId
+            self.mnFirstFrame = pRefKF.mnFrameId
+            self.mpRefKF = pRefKF
 
-            self.mfMinDistance = 0  # Minimum distance to the camera
-            self.mfMaxDistance = 0  # Maximum distance to the camera
+            self.mfMinDistance = 0
+            self.mfMaxDistance = 0
 
-            self.mWorldPos = Pos.copy()  # Copy the position
-            self.mNormalVector = np.zeros((3, 1), dtype=np.float32)  # Normal vector
+            self.mWorldPos = Pos.copy()
+            self.mNormalVector = np.zeros((3, 1), dtype=np.float32)
 
             self.mDescriptor = pRefKF.mDescriptors[idxF]
 
@@ -40,12 +29,11 @@ class MapPoint:
                 MapPoint.nNextId += 1
 
         else:
+            self.mnFirstKFid = -1
+            self.mnFirstFrame = pRefKF.mnId
+            self.mpRefKF = None
 
-            self.mnFirstKFid = -1  # ID of the first KeyFrame observing this MapPoint
-            self.mnFirstFrame = pRefKF.mnId  # ID of the first frame observing this MapPoint
-            self.mpRefKF = None  # Reference KeyFrame
-
-            self.mWorldPos = Pos.copy()  # Copy the position
+            self.mWorldPos = Pos.copy()
             Ow = pRefKF.get_camera_center()
             self.mNormalVector = self.mWorldPos - Ow
             self.mNormalVector = self.mNormalVector / np.linalg.norm(self.mNormalVector)
@@ -66,23 +54,23 @@ class MapPoint:
             with self.mpMap.mMutexPointCreation:
                 MapPoint.nNextId += 1
 
-        self.nObs = 0  # Number of observations
-        self.mnTrackReferenceForFrame = 0  # Tracking reference for the current frame
-        self.mnLastFrameSeen = 0  # Last frame where this MapPoint was seen
+        self.nObs = 0
+        self.mnTrackReferenceForFrame = 0
+        self.mnLastFrameSeen = 0
 
-        self.mnBALocalForKF = 0  # Local bundle adjustment KeyFrame
-        self.mnFuseCandidateForKF = 0  # Fuse candidate KeyFrame
-        self.mnLoopPointForKF = 0  # Loop KeyFrame
-        self.mnCorrectedByKF = 0  # Corrected by KeyFrame
-        self.mnCorrectedReference = 0  # Corrected reference
-        self.mnBAGlobalForKF = 0  # Global bundle adjustment KeyFrame
+        self.mnBALocalForKF = 0
+        self.mnFuseCandidateForKF = 0
+        self.mnLoopPointForKF = 0
+        self.mnCorrectedByKF = 0
+        self.mnCorrectedReference = 0
+        self.mnBAGlobalForKF = 0
 
-        self.mnVisible = 1  # Number of times this MapPoint was visible
-        self.mnFound = 1  # Number of times this MapPoint was found
+        self.mnVisible = 1
+        self.mnFound = 1
 
-        self.mbBad = False  # Flag indicating if this MapPoint is bad
-        self.mpReplaced = None  # Pointer to replaced MapPoint
-        self.mObservations = {}  # Pointer to replaced MapPoint
+        self.mbBad = False
+        self.mpReplaced = None
+        self.mObservations = {}
         self.mbTrackInView = None
 
     def descriptor_distance(self, a, b):
@@ -148,9 +136,7 @@ class MapPoint:
         with self.mMutexFeatures:
             return self.nObs
 
-
     def set_bad_flag(self):
-
         with self.mMutexFeatures:
             with self.mMutexPos:
 
@@ -181,7 +167,6 @@ class MapPoint:
                 nfound = self.mnFound
                 self.mpReplaced = pMP
 
-        # Update KeyFrames to replace this MapPoint with the new one
         for pKF, idx in obs.items():
             if not pMP.is_in_key_frame(pKF):
                 pKF.replace_map_point_match(idx, pMP)
@@ -189,14 +174,11 @@ class MapPoint:
             else:
                 pKF.erase_map_point_match(idx)
 
-        # Update the new MapPoint's visibility and found counters
         pMP.increase_found(nfound)
         pMP.increase_visible(nvisible)
 
-        # Recompute distinctive descriptors for the new MapPoint
         pMP.compute_distinctive_descriptors()
 
-        # Remove this MapPoint from the map
         self.mpMap.erase_map_point(self)
 
     def is_bad(self):
@@ -220,12 +202,7 @@ class MapPoint:
                 return 0.0
 
     def compute_distinctive_descriptors(self):
-        """
-        Computes the distinctive descriptor for the MapPoint based on the median distance
-        to other descriptors.
-        """
         with self.mMutexFeatures:
-
             if self.mbBad:
                 return
             observations = self.mObservations.copy()
@@ -275,9 +252,6 @@ class MapPoint:
             return pKF in self.mObservations
 
     def update_normal_and_depth(self):
-        """
-        Updates the normal vector and depth range of the MapPoint based on its observations.
-        """
         with self.mMutexFeatures:
             with self.mMutexPos:
                 if self.mbBad:
@@ -317,7 +291,7 @@ class MapPoint:
         with self.mMutexPos:
             return 1.2 * self.mfMaxDistance
 
-    def predict_scale(self, current_dist, pKF): # there  is another predict_scale which takes the frame
+    def predict_scale(self, current_dist, pKF):
 
         with self.mMutexPos:
             ratio = self.mfMaxDistance / current_dist
@@ -328,7 +302,3 @@ class MapPoint:
         return nScale
 
 
-
-if __name__ == "__main__":
-
-    m = MapPoint(None, None, None)

@@ -50,38 +50,3 @@ class FORB:
 
 
 
-if __name__ == "__main__":
-
-    import sys
-    import numpy as np
-    np.set_printoptions(threshold=sys.maxsize)
-    # Generate dummy descriptors for testing
-    descriptors = [np.ones(32, dtype=np.uint8) * i for i in range(5)]
-
-    forb = FORB(32) # 32 is the length of descriptor
-    # C++ executable command
-    cpp_executable = "./demo"
-
-    # 1. Test meanValue
-    mean_descriptor = forb.meanValue(descriptors)
-    print("Python meanValue:", mean_descriptor)
-
-    # 2. Test distance
-    dist = forb.distance(descriptors[0], descriptors[1])
-    print("Python distance:", dist)
-
-    # 3. Test toString and fromString
-    desc_str = forb.toString(descriptors[0])
-    desc_from_str = forb.fromString(desc_str)
-    print("Python toString:", desc_str)
-    print("Python fromString:", desc_from_str)
-
-    # 4. Test toMat32F
-    mat32F = forb.toMat32F(descriptors)
-    print("Python toMat32F:\n", mat32F)
-
-    # 5. Test toMat8U
-    mat8U = forb.toMat8U(descriptors)
-    print("Python toMat8U:\n", mat8U)
-
-

@@ -39,7 +39,6 @@ class Viewer:
 
     def run(self):
 
-        print("viewer")
         time.sleep(0.2)
         self.mbFinished = False
         self.mbStopped = False
@@ -49,14 +48,11 @@ class Viewer:
         gl.glEnable(gl.GL_BLEND)
         gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
 
-        # Define Camera Render Object
         s_cam = pangolin.OpenGlRenderState(
             pangolin.ProjectionMatrix(1024, 768, self.mViewpointF, self.mViewpointF, 512, 389, 0.1, 1000),
             pangolin.ModelViewLookAt(self.mViewpointX, self.mViewpointY, self.mViewpointZ, 0, 0, 0, 0, -1, 0)
         )
 
-        # Create interactive panel
-        #panel = pangolin.CreatePanel("menu").SetBounds(pangolin.Attach(0.0), pangolin.Attach(1.0), pangolin.Attach(0.0), pangolin.Attach.Pix(175))
         menuFollowCamera = True
         menuShowPoints =  True
         menuShowKeyFrames =  True
@@ -64,18 +60,14 @@ class Viewer:
         menuLocalizationMode =  False
         menuReset = False
 
-        # Create Display
         d_cam = pangolin.CreateDisplay()
         d_cam.SetBounds(pangolin.Attach(0.0), pangolin.Attach(1.0), pangolin.Attach.Pix(175), pangolin.Attach(1.0), -1024.0 / 768.0)
         d_cam.SetHandler(pangolin.Handler3D(s_cam))
 
-
-        # Control Flags
         bFollow = True
         bLocalizationMode = False
 
         while True:
-            #time.sleep(0.2)
             gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
 
             M = self.mpMapDrawer.get_current_OpenGL_camera_matrix()
@@ -96,16 +88,13 @@ class Viewer:
                 bFollow = False
 
             if menuLocalizationMode and not bLocalizationMode:
-                # Activate localization mode
                 self.mpSystem.activate_localization_mode()
                 bLocalizationMode = True
 
             elif not menuLocalizationMode and bLocalizationMode:
-                # Deactivate localization mode
                 self.mpSystem.deactivate_localization_mode()
                 bLocalizationMode = False
 
-            # Activate 3D camera view
             d_cam.Activate(s_cam)
             gl.glClearColor(1.0, 1.0, 1.0, 1.0)
 
@@ -117,10 +106,8 @@ class Viewer:
             if menuShowPoints:
                 self.mpMapDrawer.draw_map_points()
 
-            # Finish rendering frame
             pangolin.FinishFrame()
 
-            # Show current frame (dummy implementation)
             img = self.mpFrameDrawer.draw_frame()
             cv2.imshow("pyOrbSLAM: Current Frame", img)
             cv2.waitKey(int(self.mT))
@@ -139,7 +126,6 @@ class Viewer:
                 self.mpSystem.reset();
                 menuReset = False
 
-            # Add stop conditions (if needed)
             if self.stop():
                 while self.is_stopped():
                     time.sleep(3000)
@@ -147,7 +133,6 @@ class Viewer:
             if self.check_finish():
                 break;
 
-            # Exit loop condition (replace with actual check)
             if pangolin.ShouldQuit():
                 break
 

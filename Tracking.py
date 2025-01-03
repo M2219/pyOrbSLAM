@@ -1,11 +1,11 @@
 import threading
 import time
 import sys
+from copy import deepcopy
 
 import numpy as np
 import cv2
 
-from copy import deepcopy
 from ordered_set import OrderedSet
 
 from Frame import Frame
@@ -17,7 +17,6 @@ from PnPsolver import PnPsolver
 
 sys.path.append("./pyORBExtractor/lib/")
 from pyORBExtractor import ORBextractor
-
 
 class Tracking:
     def __init__(self, pSys, pVoc, pFrameDrawer, pMapDrawer, pMap, pKFDB, fSettings, sensor):
@@ -103,7 +102,6 @@ class Tracking:
 
         mnMinX, mnMaxX, mnMinY, mnMaxY = self.compute_image_bounds(mImGray, self.mK, self.mDistCoef)
 
-
         mfGridElementWidthInv = float(FRAME_GRID_COLS) / (mnMaxX - mnMinX)
         mfGridElementHeightInv = float(FRAME_GRID_ROWS) / (mnMaxY - mnMinY)
 
@@ -138,6 +136,7 @@ class Tracking:
             mnMaxX = max(mat[1, 0], mat[3, 0])
             mnMinY = min(mat[0, 1], mat[1, 1])
             mnMaxY = max(mat[2, 1], mat[3, 1])
+
         else:
             mnMinX = 0.0
             mnMaxX = imLeft.shape[1]
@@ -147,15 +146,11 @@ class Tracking:
         return mnMinX, mnMaxX, mnMinY, mnMaxY
 
     def track(self, imm):
-        """
-        Main tracking function
-        """
         if self.mState == "NO_IMAGES_YET":
             self.mState = "NOT_INITIALIZED"
 
         self.mLastProcessedState = self.mState
 
-        # Ensure thread-safe access to the map
         with self.mpMap.mMutexMapUpdate:
             if self.mState == "NOT_INITIALIZED":
                 self.stereo_initialization()
@@ -164,29 +159,21 @@ class Tracking:
                 if self.mState != "OK":
                     return
             else:
-                # System is initialized; track the frame
                 bOK = False
                 if not self.mbOnlyTracking:
                     if self.mState == "OK":
-                        # Check replaced MapPoints in the last frame
                         self.check_replaced_in_last_frame()
 
                         if  (self.mVelocity is None) or (self.mCurrentFrame.mnId < self.mnLastRelocFrameId + 2):
-                            print("-------------------------------------------> 1")
                             bOK = self.track_reference_key_frame()
 
                         else:
-
-                            print("--------------------------------------------- > 2")
                             bOK = self.track_with_motion_model()
                             if not bOK:
-                                print("-------------------------------------------------> 3")
                                 bOK = self.track_reference_key_frame()
                     else:
                         bOK = self.relocalization()
                 else:
-                    print("====================> in else")
-                    # Only tracking mode
                     if self.mState == "LOST":
                         bOK = self.relocalization()
                     else:
@@ -196,7 +183,6 @@ class Tracking:
                             else:
                                 bOK = self.track_reference_key_frame()
                         else:
-                            # Handle visual odometry mode
                             bOKMM, bOKReloc = False, False
                             vpMPsMM, vbOutMM, TcwMM = [], [], None
 
@@ -226,27 +212,16 @@ class Tracking:
 
                 self.mCurrentFrame.mpReferenceKF = self.mpReferenceKF
 
-                # Track the local map if the pose is estimated
                 if not self.mbOnlyTracking:
                     if bOK:
                         bOK = self.track_local_map()
-                        #print("current local map -->", self.mCurrentFrame.mTcw)
                 else:
                     if bOK and not self.mbVO:
                         bOK = self.track_local_map()
-                        #print("update 2 -->", self.mCurrentFrame.mTcw)
 
-
-                # Update tracking state
-                #self.mState = "OK" if bOK else "LOST"
-                #if imm > 10:
-                #    self.mState = "LOST"
-
-                # Update drawer
                 self.mpFrameDrawer.update(self)
 
                 if bOK:
-                    # Update motion model
                     if self.mLastFrame and self.mLastFrame.mTcw is not None:
                         LastTwc = np.concatenate((self.mLastFrame.get_rotation_inverse(), self.mLastFrame.get_camera_center()), axis=1)
                         LastTwc = np.concatenate((LastTwc, np.array([[0, 0, 0, 1]])), axis = 0)
@@ -258,7 +233,6 @@ class Tracking:
 
                     self.mpMapDrawer.set_current_camera_pose(self.mCurrentFrame.mTcw)
 
-                    # Clean VO matches
                     for i in range(self.mCurrentFrame.N):
                         pMP = self.mCurrentFrame.mvpMapPoints[i]
                         if pMP:
@@ -266,9 +240,7 @@ class Tracking:
                                 self.mCurrentFrame.mvbOutlier[i] = False
                                 self.mCurrentFrame.mvpMapPoints[i] = None
 
-
-                    # Delete temporary MapPoints
-                    for pMP in self.mlpTemporalPoints: # check if it works
+                    for pMP in self.mlpTemporalPoints:
                         for i in range(self.mCurrentFrame.N):
                             if self.mCurrentFrame.mvpMapPoints[i] == pMP:
                                 self.mCurrentFrame.mvbOutlier[i] = False
@@ -276,17 +248,13 @@ class Tracking:
 
                     self.mlpTemporalPoints.clear()
 
-
-                    # Check if we need to insert a new keyframe
                     if self.need_new_key_frame():
                         self.create_new_key_frame()
 
-                    # Remove high-innovation points
                     for i in range(self.mCurrentFrame.N):
                         if self.mCurrentFrame.mvbOutlier[i] and self.mCurrentFrame.mvpMapPoints[i]:
                              self.mCurrentFrame.mvpMapPoints[i] = None
 
-                # Reset if tracking is lost soon after initialization
                 if self.mState == "LOST":
                     if self.mpMap.key_frames_in_map() <= 5:
                         print("Track lost soon after initialization, resetting...")
@@ -296,16 +264,8 @@ class Tracking:
                 if not self.mCurrentFrame.mpReferenceKF:
                     self.mCurrentFrame.mpReferenceKF = self.mpReferenceKF
 
-                #print("blen mvpMapPoints", len(self.mCurrentFrame.mvpMapPoints))
-                #print("blen mvbOutlier", len(self.mCurrentFrame.mvbOutlier))
-
                 self.mLastFrame = self.mCurrentFrame.copy(self.mCurrentFrame)
-                #print("last after local map -->", self.mLastFrame.mTcw)
-                #print("alen mvpMapPoints", len(self.mLastFrame.mvpMapPoints))
-                #print("alen mvbOutlier", len(self.mLastFrame.mvbOutlier))
 
-
-        # Store frame pose information for trajectory retrieval
         if self.mCurrentFrame.mTcw is not None:
             Tcr = self.mCurrentFrame.mTcw @ self.mCurrentFrame.mpReferenceKF.get_pose_inverse()
             self.mlRelativeFramePoses.append(Tcr)
@@ -313,7 +273,7 @@ class Tracking:
             self.mlFrameTimes.append(self.mCurrentFrame.mTimeStamp)
             self.mlbLost.append(self.mState == "LOST")
         else:
-            # If tracking is lost, replicate the last known values
+
             self.mlRelativeFramePoses.append(self.mlRelativeFramePoses[-1])
             self.mlpReferences.append(self.mlpReferences[-1])
             self.mlFrameTimes.append(self.mlFrameTimes[-1])
@@ -326,9 +286,7 @@ class Tracking:
             self.mCurrentFrame.compute_BoW()
             pKFini = KeyFrame(self.mCurrentFrame, self.mpMap, self.mpKeyFrameDB)
 
-            # Insert KeyFrame into the map
             self.mpMap.add_key_frame(pKFini)
-            # Create MapPoints and associate them to the KeyFrame
             for i in range(self.mCurrentFrame.N):
                 z = self.mCurrentFrame.mvDepth[i]
                 if z > 0:
@@ -344,11 +302,7 @@ class Tracking:
 
             print(f"New map created with {self.mpMap.map_points_in_map()} points")
 
-            # Insert KeyFrame into the local mapper
-            #with self.mMutexNewKFs: # check the speed without this lock
-            self.mpLocalMapper.insert_key_frame(pKFini) # transfer insert to the while
-
-            # Update frame and keyframe references
+            self.mpLocalMapper.insert_key_frame(pKFini)
             self.mLastFrame = self.mCurrentFrame.copy(self.mCurrentFrame)
             self.mnLastKeyFrameId = self.mCurrentFrame.mnId
             self.mpLastKeyFrame = pKFini
@@ -360,35 +314,21 @@ class Tracking:
             self.mpMap.set_reference_map_points(self.mvpLocalMapPoints)
             self.mpMap.mvpKeyFrameOrigins.append(pKFini)
 
-            # Update the map drawer with the current camera pose
             self.mpMapDrawer.set_current_camera_pose(self.mCurrentFrame.mTcw)
 
-            # Set state to OK
             self.mState = "OK"
 
     def check_replaced_in_last_frame(self):
-        """
-        Update replaced map points in the last frame with their replacements.
-        """
         for i in range(self.mLastFrame.N):
             pMP = self.mLastFrame.mvpMapPoints[i]
             if pMP:
-                pRep = pMP.get_replaced() # print and check
+                pRep = pMP.get_replaced()
                 if pRep:
                     self.mLastFrame.mvpMapPoints[i] = pRep
 
     def track_reference_key_frame(self):
-        """
-        Track the reference keyframe and update the current frame pose.
-
-        Returns:
-        - True if successful, False otherwise.
-        """
-
-        # Compute Bag of Words vector
         self.mCurrentFrame.compute_BoW()
-        # Perform ORB matching with the reference keyframe
-        # If enough matches are found, setup a PnP solver
+
         matcher = ORBMatcher(0.7, True)
         nmatches, vpMapPointMatches = matcher.search_by_BoW_kf_f(self.mpReferenceKF, self.mCurrentFrame)
 
@@ -398,18 +338,8 @@ class Tracking:
         self.mCurrentFrame.mvpMapPoints = vpMapPointMatches
         self.mCurrentFrame.set_pose(self.mLastFrame.mTcw)
 
-        # Optimize the pose
         self.optimizer.pose_optimization(self.mCurrentFrame)
 
-        #print("len mvpMapPoints in track", len(self.mCurrentFrame.mvpMapPoints))
-        #print("len mvbOutlier in track", len(self.mCurrentFrame.mvbOutlier))
-
-        #        self.mLastFrame = self.mCurrentFrame.copy(self.mCurrentFrame)
-        #        #print("last after local map -->", self.mLastFrame.mTcw)
-        #        print("len mvpMapPoints", len(self.mLastFrame.mvpMapPoints))
-        #        print("len mvbOutlier", len(self.mLastFrame.mvbOutlier))
-
-        # Discard outliers
         nmatches_map = 0
         for i in range(self.mCurrentFrame.N):
             if self.mCurrentFrame.mvpMapPoints[i]:
@@ -426,13 +356,6 @@ class Tracking:
         return nmatches_map >= 10
 
     def track_local_map(self):
-        """
-        Perform local map tracking by updating the local map, searching for local points,
-        and optimizing the pose of the current frame.
-
-        Returns:
-            bool: True if tracking is successful, False otherwise.
-        """
         self.update_local_map()
         self.search_local_points()
 
@@ -440,7 +363,6 @@ class Tracking:
 
         self.mnMatchesInliers = 0
 
-        # Update MapPoint statistics
         for i in range(self.mCurrentFrame.N):
             if self.mCurrentFrame.mvpMapPoints[i]:
                 if not self.mCurrentFrame.mvbOutlier[i]:
@@ -453,8 +375,6 @@ class Tracking:
                 else:
                     self.mCurrentFrame.mvpMapPoints[i] = None
 
-        # Decide if the tracking was successful
-        # More restrictive if there was a recent relocalization
         if self.mCurrentFrame.mnId < self.mnLastRelocFrameId + self.mMaxFrames and self.mnMatchesInliers < 50:
             return False
 
@@ -464,25 +384,12 @@ class Tracking:
             return True
 
     def update_local_map(self):
-        """
-        Update the local map by setting the reference map points for visualization
-        and updating local keyframes and points.
-        """
-        # Set reference map points for visualization
-
         self.mpMap.set_reference_map_points(self.mvpLocalMapPoints)
 
-        # Update local keyframes and points
         self.update_local_keyframes()
         self.update_local_points()
 
-
     def update_local_keyframes(self):
-        """
-        Update the local keyframes by voting for the keyframes that observe the map points
-        in the current frame and identifying the keyframe that shares the most points.
-        """
-        # Map point voting for keyframes
         self.keyframeCounter = {}
         for i in range(self.mCurrentFrame.N):
             if self.mCurrentFrame.mvpMapPoints[i]:
@@ -499,13 +406,11 @@ class Tracking:
         if not self.keyframeCounter:
             return
 
-        # Find the keyframe with the most shared points
         max_votes = 0
         pKFmax = None
 
         self.mvpLocalKeyFrames.clear()
 
-        # Include all keyframes observing a map point in the local map
         for pKF, count in self.keyframeCounter.items():
             if pKF.is_bad():
                 continue
@@ -518,9 +423,6 @@ class Tracking:
             pKF.mnTrackReferenceForFrame = self.mCurrentFrame.mnId
 
     def update_local_points(self):
-        """
-        Update the local map points by collecting map points from local keyframes.
-        """
         self.mvpLocalMapPoints.clear()
         for pKF in self.mvpLocalKeyFrames:
             vpMPs = pKF.get_map_point_matches()
@@ -535,10 +437,6 @@ class Tracking:
 
 
     def search_local_points(self):
-        """
-        Search for local map points and update their visibility and tracking status.
-        """
-        # Do not search map points already matched
         for i in range(self.mCurrentFrame.N):
             pMP = self.mCurrentFrame.mvpMapPoints[i]
             if pMP:
@@ -550,13 +448,13 @@ class Tracking:
                     pMP.mbTrackInView = False
 
         nToMatch = 0
-        # Project points in frame and check their visibility
+
         for pMP in self.mvpLocalMapPoints:
             if pMP.mnLastFrameSeen == self.mCurrentFrame.mnId:
                 continue
             if pMP.is_bad():
                 continue
-            # Project (this fills MapPoint variables for matching)
+
             if self.mCurrentFrame.is_in_frustum(pMP, 0.5):
                 pMP.increase_visible()
                 nToMatch += 1
@@ -564,44 +462,30 @@ class Tracking:
         if nToMatch > 0:
             matcher = ORBMatcher(0.8, True)
             th = 1
-            # If the camera has been recently relocalized, perform a coarser search
+
             if self.mCurrentFrame.mnId < self.mnLastRelocFrameId + 2:
                 th = 5
             matcher.search_by_projection_f_p(self.mCurrentFrame, self.mvpLocalMapPoints, th)
 
     def need_new_key_frame(self):
-        """
-        Determine if a new keyframe needs to be added to the map.
-
-        Returns:
-            bool: True if a new keyframe is needed, False otherwise.
-        """
-
         if self.mbOnlyTracking:
             return False
 
-        # If Local Mapping is frozen by a Loop Closure, do not insert keyframes
         if self.mpLocalMapper.is_stopped() or self.mpLocalMapper.stop_requested():
             return False
 
-
         nKFs = self.mpMap.key_frames_in_map()
-        # Do not insert keyframes if not enough frames have passed since last relocalization
+
         if self.mCurrentFrame.mnId < self.mnLastRelocFrameId + self.mMaxFrames and nKFs > self.mMaxFrames:
             return False
 
-        # Tracked MapPoints in the reference keyframe
         nMinObs = 3
         if nKFs <= 2:
             nMinObs = 2
 
         nRefMatches = self.mpReferenceKF.tracked_map_points(nMinObs)
-
-        # Is Local Mapping accepting keyframes?
         bLocalMappingIdle = self.mpLocalMapper.accept_key_frames()
 
-
-        # Check "close" points being tracked and potential new points
         nNonTrackedClose = 0
         nTrackedClose = 0
         for i in range(self.mCurrentFrame.N):
@@ -613,19 +497,16 @@ class Tracking:
 
         bNeedToInsertClose = (nTrackedClose < 100) and (nNonTrackedClose > 70)
 
-        # Thresholds
         thRefRatio = 0.75
         if nKFs < 2:
             thRefRatio = 0.4
 
-        # Conditions
         c1a = self.mCurrentFrame.mnId >= self.mnLastKeyFrameId + self.mMaxFrames
         c1b = self.mCurrentFrame.mnId >= self.mnLastKeyFrameId + self.mMinFrames and bLocalMappingIdle
         c1c = (self.mnMatchesInliers < nRefMatches * 0.25 or bNeedToInsertClose)
         c2 = (self.mnMatchesInliers < nRefMatches * thRefRatio or bNeedToInsertClose) and self.mnMatchesInliers > 15
 
         if (c1a or c1b or c1c) and c2:
-            # Insert keyframe if mapping accepts keyframes
             if bLocalMappingIdle:
                 return True
             else:
@@ -640,13 +521,9 @@ class Tracking:
 
 
     def create_new_key_frame(self):
-        """
-        Create and insert a new keyframe into the map.
-        """
         if not self.mpLocalMapper.set_not_stop(True):
             return
 
-        # Create a new keyframe
         pKF = KeyFrame(self.mCurrentFrame, self.mpMap, self.mpKeyFrameDB)
 
         self.mpReferenceKF = pKF
@@ -654,7 +531,6 @@ class Tracking:
 
         self.mCurrentFrame.update_pose_matrices()
 
-       # Sort points by measured depth from stereo/RGBD sensor
         vDepthIdx = []
         for i in range(self.mCurrentFrame.N):
             z = self.mCurrentFrame.mvDepth[i]
@@ -662,7 +538,7 @@ class Tracking:
                 vDepthIdx.append((z, i))
 
         if vDepthIdx:
-            vDepthIdx.sort()  # Sort by depth
+            vDepthIdx.sort()
 
             nPoints = 0
             for depth, i in vDepthIdx:
@@ -700,39 +576,16 @@ class Tracking:
         mpLastKeyFrame = pKF
 
     def track_with_motion_model(self):
-        """
-        Track the current frame using the motion model.
-
-        Returns:
-            bool: True if tracking was successful, False otherwise.
-        """
         matcher = ORBMatcher(0.9, True)
-
-        # Update the last frame pose according to its reference keyframe
-        # Create "visual odometry" points if in Localization Mode
-        #print("len mvpMapPoints", len(self.mLastFrame.mvpMapPoints))
-        #print("len mvbOutlier", len(self.mLastFrame.mvbOutlier))
 
         self.update_last_frame()
 
         self.mCurrentFrame.set_pose(self.mVelocity @ self.mLastFrame.mTcw)
-
         self.mCurrentFrame.mvpMapPoints = [None] * self.mCurrentFrame.N
-
-        #j = 0
-        #for i, o in self.mLastFrame.mvbOutlier.items():
-        #    if o:
-        #        j = j + 1
-
-        #print("number of outliers", j)
-
-        #print("len mvpMapPoints", len(self.mLastFrame.mvpMapPoints))
-        #print("len mvbOutlier", len(self.mLastFrame.mvbOutlier))
 
         th = 7
         nmatches = matcher.search_by_projection_f_f(self.mCurrentFrame, self.mLastFrame, th)
 
-        # If few matches, use a wider search window
         if nmatches < 20:
             self.mCurrentFrame.mvpMapPoints = [None] * self.mCurrentFrame.N
             nmatches = matcher.search_by_projection_f_f(self.mCurrentFrame, self.mLastFrame, 2 * th)
@@ -740,10 +593,8 @@ class Tracking:
         if nmatches < 20:
             return False
 
-        # Optimize the frame pose with all matches
         self.optimizer.pose_optimization(self.mCurrentFrame)
 
-        # Discard outliers
         nmatches_map = 0
         for i in range(self.mCurrentFrame.N):
             if self.mCurrentFrame.mvpMapPoints[i]:
@@ -758,8 +609,6 @@ class Tracking:
                 elif self.mCurrentFrame.mvpMapPoints[i].observations() > 0:
                     nmatches_map += 1
 
-        #print("nmatches_map = ", nmatches_map)
-
         if self.mbOnlyTracking:
             mbVO = nmatches_map < 10
             return nmatches > 20
@@ -767,11 +616,6 @@ class Tracking:
         return nmatches_map >= 10
 
     def update_last_frame(self):
-        """
-        Update the last frame's pose and create "visual odometry" map points if needed.
-        """
-
-        # Update pose according to the reference keyframe
         pRef = self.mLastFrame.mpReferenceKF
         Tlr = self.mlRelativeFramePoses[-1]
 
@@ -780,8 +624,6 @@ class Tracking:
         if self.mnLastKeyFrameId == self.mLastFrame.mnId or not self.mbOnlyTracking:
             return
 
-        # Create "visual odometry" MapPoints
-        # Sort points by measured depth from the stereo/RGB-D sensor
         vDepthIdx = []
         for i in range(self.mLastFrame.N):
             z = self.mLastFrame.mvDepth[i]
@@ -791,10 +633,8 @@ class Tracking:
         if not vDepthIdx:
             return
 
-        vDepthIdx.sort()  # Sort by depth
+        vDepthIdx.sort()
 
-        # Insert all close points (depth < mThDepth)
-        # If fewer than 100 close points, insert the 100 closest ones
         nPoints = 0
         for depth, i in vDepthIdx:
             bCreateNew = False
@@ -819,20 +659,13 @@ class Tracking:
                 break
 
     def relocalization(self):
-        # Compute Bag of Words Vector
         self.mCurrentFrame.compute_BoW()
-        print("------------------------------------------------------------  relocalization")
-        # Relocalization is performed when tracking is lost
-        # Track Lost: Query KeyFrame Database for keyframe candidates for relocalisation
         vpCandidateKFs = self.mpKeyFrameDB.detect_relocalization_candidates(self.mCurrentFrame)
-        print("vpCandidateKFs", len(vpCandidateKFs))
         if not vpCandidateKFs:
             return False
 
         nKFs = len(vpCandidateKFs)
 
-        # Perform ORB matching with each candidate
-        # If enough matches are found, setup a PnP solver
         matcher = ORBMatcher(0.75, True)
 
         vpPnPsolvers = [None] * nKFs
@@ -856,8 +689,6 @@ class Tracking:
                     vpPnPsolvers[i] = pSolver
                     nCandidates += 1
 
-        # Perform P4P RANSAC iterations
-        # Until a camera pose supported by enough inliers is found
         bMatch = False
         matcher2 = ORBMatcher(0.9, True)
 
@@ -866,19 +697,17 @@ class Tracking:
                 if vbDiscarded[i]:
                     continue
 
-                # Perform 5 RANSAC iterations
                 vbInliers = []
                 nInliers = 0
                 bNoMore = False
 
                 pSolver = vpPnPsolvers[i]
                 Tcw, bNoMore, vbInliers, nInlier = pSolver.iterate(5)
-                # If RANSAC reaches max iterations, discard keyframe
+
                 if bNoMore:
                     vbDiscarded[i] = True
                     nCandidates -= 1
 
-                # If a camera pose is computed, optimize
                 if Tcw is not None:
                     self.mCurrentFrame.mTcw = Tcw
 
@@ -900,7 +729,6 @@ class Tracking:
                         if self.mCurrentFrame.mvbOutlier[io]:
                             self.mCurrentFrame.mvpMapPoints[io] = None
 
-                    # If few inliers, search by projection in a coarse window and optimize again
                     if nGood < 50:
                         nadditional = matcher2.search_by_projection_f_kf_f(
                             self.mCurrentFrame, vpCandidateKFs[i], sFound, 10, 100
@@ -909,7 +737,6 @@ class Tracking:
                         if nadditional + nGood >= 50:
                             nGood = self.optimizer.pose_optimization(self.mCurrentFrame)
 
-                            # If many inliers but still not enough, search by projection again in a narrower window
                             if 30 < nGood < 50:
                                 sFound.clear()
                                 for ip in range(self.mCurrentFrame.N):
@@ -919,7 +746,6 @@ class Tracking:
                                     self.mCurrentFrame, vpCandidateKFs[i], sFound, 3, 64
                                 )
 
-                                # Final optimization
                                 if nGood + nadditional >= 50:
                                     nGood = self.optimizer.pose_optimization(self.mCurrentFrame)
 
@@ -927,7 +753,6 @@ class Tracking:
                                         if self.mCurrentFrame.mvbOutlier[io]:
                                             self.mCurrentFrame.mvpMapPoints[io] = None
 
-                    # If the pose is supported by enough inliers, stop RANSACs and continue
                     if nGood >= 50:
                         bMatch = True
                         break
@@ -942,39 +767,30 @@ class Tracking:
         self.mbOnlyTracking = flag
 
     def reset(self):
-        """
-        Reset the entire tracking system, including mapping, loop closing, and database clearing.
-        """
         print("System Resetting")
         if self.mpViewer:
             self.mpViewer.request_stop()
             while not self.mpViewer.is_stopped():
-                time.sleep(0.003)  # Sleep for 3 milliseconds
+                time.sleep(0.003)
 
-        # Reset Local Mapping
         print("Resetting Local Mapper...")
         self.mpLocalMapper.request_reset()
         print("done")
 
-        # Reset Loop Closing
         print("Resetting Loop Closing...")
         self.mpLoopClosing.request_reset()
         print("done")
 
-        # Clear BoW Database
         print("Resetting Database...")
         self.mpKeyFrameDB.clear()
         print("done")
 
-        # Clear Map (erases MapPoints and KeyFrames)
         self.mpMap.clear()
 
-        # Reset global IDs
         self.KeyFrame.nNextId = 0
         self.Frame.nNextId = 0
         self.mState = "NO_IMAGES_YET"
 
-        # Clear tracking-related lists
         self.mlRelativeFramePoses.clear()
         self.mlpReferences.clear()
         self.mlFrameTimes.clear()
@@ -982,61 +798,4 @@ class Tracking:
 
         if self.mpViewer:
             self.mpViewer.release()
-
-
-
-if __name__ == "__main__":
-
-    import yaml
-    from pyDBoW.TemplatedVocabulary import TemplatedVocabulary
-
-    sys.path.append("./pyORBExtractor/lib/")
-    from pyORBExtractor import ORBextractor
-
-    from stereo_kitti import LoadImages
-    from KeyFrameDatabase import KeyFrameDatabase
-    from Map import Map
-    from FrameDrawer import FrameDrawer
-    from MapDrawer import MapDrawer
-
-    from System import System
-
-    vocabulary = TemplatedVocabulary(k=5, L=3, weighting="TF_IDF", scoring="L1_NORM")
-    vocabulary.load_from_text_file("./Vocabulary/ORBvoc.txt")
-
-    with open("configs/KITTI00-02.yaml", 'r') as f:
-        cfg = yaml.load(f, Loader=yaml.SafeLoader)
-
-    leftImages, rightImages, timeStamps = LoadImages("00")
-    nImages = len(leftImages)
-
-    ss = {
-           "pKF_ss": None, "pKF_ss_lock" : threading.Lock(),
-           "mbStopped_ss": False, "mbStopped_ss_lock" : threading.Lock(),
-           "mbStopRequested_ss": False, "mbStopRequested_ss_lock" : threading.Lock(),
-           "mbAcceptKeyFrames_ss": True, "mbAcceptKeyFrames_ss_lock" : threading.Lock(),
-           "mbAbortBA_ss": False, "mbAbortBA_ss_lock" : threading.Lock(),
-           "len_mlNewKeyFrames_ss": None, "len_mlNewKeyFrames_ss_lock" : threading.Lock(),
-           "mbNotStop_ss": False, "mbNotStop_ss_lock" : threading.Lock()
-         }
-
-    mpKeyFrameDatabase = KeyFrameDatabase(vocabulary)
-
-    mpMap = Map()
-
-    mpFrameDrawer = FrameDrawer(mpMap)
-    mpMapDrawer = MapDrawer(mpMap, cfg)
-
-    mpTracker = Tracking(System, vocabulary, mpFrameDrawer, mpMapDrawer,
-                                  mpMap, mpKeyFrameDatabase, cfg, sensor="Stereo")
-
-    for i in range(10):
-
-        mleft = cv2.imread(leftImages[i], cv2.IMREAD_GRAYSCALE)
-        mright = cv2.imread(rightImages[i], cv2.IMREAD_GRAYSCALE)
-        timestamp = float(timeStamps[i])
-        print("FFFFFFFFFFFFFFFFFFFrame = " , i)
-        Twc = mpTracker.grab_image_stereo(mleft, mright, timestamp)
-        #print(Twc)
-
 

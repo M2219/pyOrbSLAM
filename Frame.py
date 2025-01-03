@@ -13,8 +13,6 @@ class Frame:
     def __init__(self, mleft, mright, timestamp, mpORBextractorLeft, mpORBextractorRight,
                    mpVocabulary, mK, mDistCoef, mbf, mThDepth, frame_args):
 
-
-        # self.args = args
         self.frame_args = frame_args
         self.fx = frame_args[0]
         self.fy = frame_args[1]
@@ -30,7 +28,7 @@ class Frame:
         self.mnMaxY = frame_args[11]
         self.FRAME_GRID_ROWS = frame_args[12]
         self.FRAME_GRID_COLS = frame_args[13]
-        #
+
         self.mpORBvocabulary = mpVocabulary
         self.mbf = mbf
         self.mK =mK
@@ -41,21 +39,11 @@ class Frame:
         self.mThDepth = mThDepth
         self.mBowVec = None
         self.mFeatVec = None
+        self.mpReferenceKF = None
+        self.mb = self.mbf / self.mK[0][0]
 
         self.mpORBextractorLeft = mpORBextractorLeft
         self.mpORBextractorRight = mpORBextractorRight
-
-        self.mpReferenceKF = None
-
-        self.mb = self.mbf / self.mK[0][0]
-        #threadLeft = threading.Thread(target=self.ExtractORB, args=(0, mleft))
-        #threadRight = threading.Thread(target=self.ExtractORB, args=(1, mright))
-
-        #threadLeft.start()
-        #threadRight.start()
-
-        #threadLeft.join()
-        #threadRight.join()
 
         self.ExtractORB(0, mleft)
         self.ExtractORB(1, mright)
@@ -74,21 +62,15 @@ class Frame:
         self.N = len(self.mvKeys)
 
         self.undistort_keypoints()
-        #tt = time.time()
         self.compute_stereo_matches()
-        #print(f"------> time stereo matching : {time.time()-tt}")
 
         self.mvpMapPoints = [None] * self.N
         self.mvbOutlier = [False] * self.N
-
-        #tt = time.time()
 
         self.assign_features_to_grid()
 
         self.mnId = Frame.nNextId
         Frame.nNextId += 1
-
-        #print("stereo", time.time() - tt)
 
     def copy(self, frame):
         new_frame = Frame(self.mleft, self.mright, self.mTimeStamp, self.mpORBextractorLeft, self.mpORBextractorRight,
@@ -159,48 +141,22 @@ class Frame:
         return self.mRwc.copy()
 
     def pos_in_grid(self, kps):
-        # Vectorized computation for all keypoints
         keypoints = np.array([[kp.pt[0], kp.pt[1]] for kp in kps])
         posX = np.round((keypoints[:, 0] - self.mnMinX) * self.mfGridElementWidthInv).astype(int)
         posY = np.round((keypoints[:, 1] - self.mnMinY) * self.mfGridElementHeightInv).astype(int)
 
-        # Check bounds
         valid = (posX >= 0) & (posX < self.FRAME_GRID_COLS) & (posY >= 0) & (posY < self.FRAME_GRID_ROWS)
 
         return valid, posX, posY
 
     def assign_features_to_grid(self):
-        # Initialize the grid with empty lists
         self.mGrid = [[[] for _ in range(self.FRAME_GRID_ROWS)] for _ in range(self.FRAME_GRID_COLS)]
 
-        # Precompute grid positions for all keypoints
         valid, posX, posY = self.pos_in_grid(self.mvKeys)
 
-        # Assign keypoints to grid cells
         for i in range(self.N):
             if valid[i]:
                 self.mGrid[posX[i]][posY[i]].append(i)
-    """
-    def pos_in_grid(self, kp):
-
-        posX = round((kp.pt[0] - self.mnMinX) * self.mfGridElementWidthInv)
-        posY = round((kp.pt[1] - self.mnMinY) * self.mfGridElementHeightInv)
-
-        if posX < 0 or posX >= self.FRAME_GRID_COLS or posY < 0 or posY >= self.FRAME_GRID_ROWS:
-            return False, None, None
-
-        return True, posX, posY
-
-    def assign_features_to_grid(self):
-
-        self.mGrid = [[[] for _ in range(self.N)] for _ in range(self.N)]
-        for i in range(self.N):
-            kp = self.mvKeys[i]
-            bflag, nGridPosX, nGridPosY = self.pos_in_grid(kp)
-            if bflag:
-                self.mGrid[nGridPosX][nGridPosY].append(i)
-
-    """
 
     def compute_stereo_matches(self):
 
@@ -226,7 +182,6 @@ class Frame:
         minD = 0
         maxD = self.mbf / minZ;
 
-        # disparity calculation
         vDistIdx = []
         for iL in range(self.N):
 
@@ -264,8 +219,6 @@ class Frame:
                         bestDist = dist
                         bestIdxR = iC
 
-            #print("bestDist", bestDist)
-            #print("thOrbDist", thOrbDist)
             if bestDist < thOrbDist:
 
                 uR0 = self.mvKeysRight[bestIdxR].pt[0]
@@ -286,7 +239,7 @@ class Frame:
 
                 iniu = scaleduR0 + L - w
                 endu = scaleduR0 + L + w + 1
-                if iniu < 0 or endu >= self.mvImagePyramidRight[kpL.octave].shape[1]: # check which dimention is cols
+                if iniu < 0 or endu >= self.mvImagePyramidRight[kpL.octave].shape[1]: 
                     continue
 
                 for incR in range(-L, L + 1):
@@ -304,7 +257,6 @@ class Frame:
                 if bestincR == -L or bestincR == L:
                     continue
 
-                # Sub-pixel match (Parabola fitting)
                 dist1 = vDists[L + bestincR - 1]
                 dist2 = vDists[L + bestincR]
                 dist3 = vDists[L + bestincR + 1]
@@ -314,7 +266,6 @@ class Frame:
                 if deltaR < -1 or deltaR > 1:
                     continue
 
-                # Re-scaled coordinate
                 bestuR = self.mvScaleFactors[kpL.octave] * (scaleduR0 + bestincR + deltaR)
 
                 disparity = uL - bestuR
@@ -325,7 +276,6 @@ class Frame:
 
                     self.mvDepth[iL] = self.mbf / disparity
                     self.mvuRight[iL] = bestuR
-                    #print(self.mvDepth[iL], self.mvuRight[iL])
                     vDistIdx.append((bestDist, iL))
 
     def unproject_stereo(self, i):
@@ -376,32 +326,17 @@ class Frame:
         return sum(bin(byte).count('1') for byte in xor)
 
     def is_in_frustum(self, pMP, viewing_cos_limit):
-        """
-        Check if a MapPoint is in the frustum of the current frame.
-
-        Args:
-            pMP (MapPoint): The map point to check.
-            viewing_cos_limit (float): The viewing cosine limit.
-
-        Returns:
-            bool: True if the map point is in the frustum, False otherwise.
-        """
         pMP.mbTrackInView = False
 
-        # 3D in absolute coordinates
         P = pMP.get_world_pos()
-
-        # 3D in camera coordinates
         Pc = self.mRcw @ P + self.mtcw
         PcX = Pc[0]
         PcY = Pc[1]
         PcZ = Pc[2]
 
-        # Check positive depth
         if PcZ < 0.0:
             return False
 
-        # Project in image and check it is not outside
         invz = 1.0 / PcZ
         u = self.fx * PcX * invz + self.cx
         v = self.fy * PcY * invz + self.cy
@@ -411,7 +346,6 @@ class Frame:
         if v < self.mnMinY or v > self.mnMaxY:
            return False
 
-        # Check distance is in the scale invariance region of the MapPoint
         max_distance = pMP.get_max_distance_invariance()
         min_distance = pMP.get_min_distance_invariance()
         PO = P - self.mOw
@@ -420,17 +354,14 @@ class Frame:
         if dist < min_distance or dist > max_distance:
             return False
 
-        # Check viewing angle
         Pn = pMP.get_normal()
         view_cos = (PO.T).dot(Pn) / dist
 
         if view_cos[0] < viewing_cos_limit:
             return False
 
-        # Predict scale in the image
         n_predicted_level = pMP.predict_scale(dist, self)
 
-        # Data used by the tracking
         pMP.mbTrackInView = True
         pMP.mTrackProjX = u
         pMP.mTrackProjXR = u - self.mbf * invz
@@ -439,21 +370,7 @@ class Frame:
         pMP.mTrackViewCos = view_cos
         return True
 
-
     def get_features_in_area(self, x, y, r, min_level, max_level):
-        """
-        Get the indices of features in a specified area and within scale levels.
-
-        Args:
-            x (float): X-coordinate of the center.
-            y (float): Y-coordinate of the center.
-            r (float): Radius around (x, y) to search.
-            min_level (int): Minimum scale level to consider.
-            max_level (int): Maximum scale level to consider.
-
-        Returns:
-            list: Indices of features within the area and scale levels.
-        """
         v_indices = []
 
         n_min_cell_x = max(0, int((x - self.mnMinX - r) * self.mfGridElementWidthInv))
@@ -497,144 +414,4 @@ class Frame:
                         v_indices.append(g)
 
         return v_indices
-
-
-def compute_image_bounds(imLeft, mK, mDistCoef):
-
-    if mDistCoef[0][0] != 0.0:
-        mat = np.zeros((4, 2), dtype=np.float32)
-        mat[0, 0] = 0.0
-        mat[0, 1] = 0.0
-        mat[1, 0] = imLeft.shape[1]
-        mat[1, 1] = 0.0
-        mat[2, 0] = 0.0
-        mat[2, 1] = imLeft.shape[0]
-        mat[3, 0] = imLeft.shape[1]
-        mat[3, 1] = imLeft.shape[0]
-
-        mat = mat.reshape(-1, 1, 2)
-        mat = cv2.undistortPoints(mat, mK, mDistCoef, None, mK)
-        mat = mat.reshape(-1, 2)
-
-        mnMinX = min(mat[0, 0], mat[2, 0])
-        mnMaxX = max(mat[1, 0], mat[3, 0])
-        mnMinY = min(mat[0, 1], mat[1, 1])
-        mnMaxY = max(mat[2, 1], mat[3, 1])
-    else:
-        mnMinX = 0.0
-        mnMaxX = imLeft.shape[1]
-        mnMinY = 0.0
-        mnMaxY = imLeft.shape[0]
-
-    return mnMinX, mnMaxX, mnMinY, mnMaxY
-
-if __name__ == "__main__":
-    import sys
-    import yaml
-    from pyDBoW.TemplatedVocabulary import TemplatedVocabulary
-    from stereo_kitti import LoadImages
-    import time
-
-    sys.path.append("./pyORBExtractor/lib/")
-    from pyORBExtractor import ORBextractor
-
-
-    vocabulary = TemplatedVocabulary(k=5, L=3, weighting="TF_IDF", scoring="L1_NORM")
-    vocabulary.load_from_text_file("./Vocabulary/ORBvoc.txt")
-
-    with open("configs/KITTI00-02.yaml", 'r') as f:
-        cfg = yaml.load(f, Loader=yaml.SafeLoader)
-
-    leftImages, rightImages, timeStamps = LoadImages("00")
-    nImages = len(leftImages)
-    mleft = cv2.imread(leftImages[0], cv2.IMREAD_GRAYSCALE)
-    mright = cv2.imread(rightImages[0], cv2.IMREAD_GRAYSCALE)
-    timestamp = float(timeStamps[0])
-
-    fx = cfg["Camera.fx"]
-    fy = cfg["Camera.fy"]
-    cx = cfg["Camera.cx"]
-    cy = cfg["Camera.cy"]
-
-    mk = np.eye(3, dtype=np.float32)
-    mk[0][0] = fx
-    mk[1][1] = fy
-    mk[0][2] = cx
-    mk[1][2] = cy
-
-
-    mDistCoef = np.ones((1, 4), dtype=np.float32)
-    mDistCoef[0][0] = cfg["Camera.k1"]
-    mDistCoef[0][1] = cfg["Camera.k2"]
-    mDistCoef[0][2] = cfg["Camera.p1"]
-    mDistCoef[0][3] = cfg["Camera.p2"]
-
-    mbf = cfg["Camera.bf"]
-    mThDepth = mbf * cfg["ThDepth"] / fx;
-
-    fps = cfg["Camera.fps"]
-    if fps == 0:
-        fps = 30
-
-    mMinFrames = 0
-    mMaxFrames = fps
-
-    nRGB = cfg["Camera.RGB"]
-    mbRGB = nRGB
-
-    nFeatures = cfg["ORBextractor.nFeatures"]
-    fScaleFactor = cfg["ORBextractor.scaleFactor"]
-    nLevels = cfg["ORBextractor.nLevels"]
-    fIniThFAST = cfg["ORBextractor.iniThFAST"]
-    fMinThFAST = cfg["ORBextractor.minThFAST"]
-
-    mORBExtractorLeft = ORBextractor(nFeatures, fScaleFactor, nLevels, fIniThFAST, fMinThFAST)
-    mORBExtractorRight = ORBextractor(nFeatures, fScaleFactor, nLevels, fIniThFAST, fMinThFAST)
-
-    keypointsL = []
-    keypointsL.append(cv2.KeyPoint(x=50.0, y=100.0, size=10.0, angle=45.0, response=0.8, octave=1, class_id=0))
-    keypointsL.append(cv2.KeyPoint(x=150.0, y=200.0, size=12.5, angle=90.0, response=0.9, octave=2, class_id=1))
-    keypointsL.append(cv2.KeyPoint(x=300.0, y=400.0, size=15.0, angle=-1.0, response=0.7, octave=3, class_id=2))
-
-
-    keypointsR = []
-    keypointsR.append(cv2.KeyPoint(x=54.0, y=140.0, size=13.0, angle=44.0, response=0.2, octave=1, class_id=0))
-    keypointsR.append(cv2.KeyPoint(x=110.0, y=220.0, size=15.5, angle=20.0, response=0.4, octave=2, class_id=1))
-    keypointsR.append(cv2.KeyPoint(x=200.0, y=440.0, size=17.0, angle=-11.0, response=0.6, octave=3, class_id=2))
-
-
-    mnMinX, mnMaxX, mnMinY, mnMaxY = compute_image_bounds(mleft, mk, mDistCoef)
-
-    FRAME_GRID_ROWS = 48
-    FRAME_GRID_COLS = 64
-
-    mfGridElementWidthInv = float(FRAME_GRID_COLS) / (mnMaxX - mnMinX)
-    mfGridElementHeightInv = float(FRAME_GRID_ROWS) / (mnMaxY - mnMinY)
-
-    invfx = 1.0 / fx
-    invfy = 1.0 / fy
-
-    # should be added to args
-    frame_args = [fx, fy, cx, cy, invfx, invfy, mfGridElementWidthInv, mfGridElementHeightInv, mnMinX, mnMaxX, mnMinY, mnMaxY, FRAME_GRID_ROWS, FRAME_GRID_COLS]
-
-    mTcw = np.eye(4, dtype=np.float32)
-
-    # Rotation
-    mTcw[0, 0] = 0.866
-    mTcw[0, 1] = -0.5
-    mTcw[1, 0] = 0.5
-    mTcw[1, 1] = 0.866
-    mTcw[2, 2] = 1.0
-
-    # Set translation
-    mTcw[0, 3] = 0.5
-    mTcw[1, 3] = 0.3
-    mTcw[2, 3] = 1.0
-
-    print("start")
-    for i in range(10):
-        t = time.time()
-        mFrame = Frame(mleft, mright, timestamp, mORBExtractorLeft, mORBExtractorRight, vocabulary, mk, mDistCoef, mbf, mThDepth, frame_args)
-        print("time", time.time()-t)
-
 

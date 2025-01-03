@@ -42,8 +42,6 @@ class System:
             print(f"Wrong path to vocabulary. Failed to open at: {strVocFile}")
             exit(-1)
 
-        print("Vocabulary loaded!")
-
         self.mpKeyFrameDatabase = KeyFrameDatabase(self.mpVocabulary)
 
         self.mpMap = Map()
@@ -70,22 +68,7 @@ class System:
             self.mptViewer_thread = threading.Thread(target=self.mpViewer.run)
             self.mptViewer_thread.start()
 
-
-        #self.mpTracker.set_local_mapper(self.mpLocalMapper)
-        #self.mpTracker.set_loop_closing(self.mpLoopCloser)
-
-        #self.mpLocalMapper.set_tracker(self.mpTracker)
-        #self.mpLocalMapper.set_loop_closer(self.mpLoopCloser)
-
-        #self.mpLoopCloser.set_tracker(self.mpTracker)
-        #self.mpLoopCloser.set_local_mapper(self.mpLocalMapper)
-
-        #self.mpTracker.set_viewer(self.mpViewer)
-
     def reset(self):
-        """
-        Requests a system reset in a thread-safe manner.
-        """
         with self.mMutexReset:
             self.mbReset = True
 
@@ -95,7 +78,6 @@ class System:
             if self.mbActivateLocalizationMode:
                 SLAM.mpLocalMapper.request_stop()
 
-                # Wait until Local Mapping has effectively stopped
                 while not self.mpLocalMapper.is_stopped():
                     time.sleep(0.001)
 
@@ -107,7 +89,7 @@ class System:
                 self.mpLocalMapper.release()
                 self.mbDeactivateLocalizationMode = False
 
-        with self.mpLocalMapper.mMutexReset:  # Equivalent to after viewer and loop closing complete reset() function in the tracking
+        with self.mpLocalMapper.mMutexReset:
             if self.mbReset:
                 self.mpTracker.reset()
                 self.mbReset = False
@@ -133,11 +115,9 @@ class System:
 
         print(f"Saving camera trajectory to {filename} ...")
 
-        # Get all keyframes and sort by ID
         vpKFs = self.mpMap.get_all_key_frames()
         vpKFs_s = sorted(vpKFs, key=lambda kf: kf.mnId)
 
-        # Transform all keyframes so that the first keyframe is at the origin
         Two = vpKFs_s[0].get_pose_inverse()
 
         with open(filename, "w") as f:
@@ -167,51 +147,22 @@ class System:
         print("Trajectory saved!")
 
     def shutdown(self):
-        # Request all components to finish
         self.mpLocalMapper.request_finish()
-        #self.mpLoopCloser.request_finish()
+        self.mpLoopCloser.request_finish()
 
         if self.mpViewer:
             self.mpViewer.request_finish()
             while not self.mpViewer.is_finished():
-                time.sleep(0.005)  # Sleep for 5 milliseconds
+                time.sleep(0.005)
 
-        # Wait until all threads have effectively stopped
         while (not self.mpLocalMapper.is_finished()):
-               #or not self.mpLoopCloser.is_finished() or self.mpLoopCloser.is_running_gba()):
-            time.sleep(0.005)  # Sleep for 5 milliseconds
+            time.sleep(0.005)
 
         if self.mpViewer:
             self.mptViewer_thread.join()
 
-        #    pangolin.BindToContext("ORB-SLAM2: Map Viewer")
-
         self.mptLocalMapping_thread.join()
-        #self.mpLoopCloser_thread.join()
+        self.mpLoopCloser_thread.join()
 
-
-if __name__ == "__main__":
-
-    strSettingsFile = "configs/KITTI00-02.yaml"
-    strVocFile = "./Vocabulary/ORBvoc.txt"
-
-    from stereo_kitti import LoadImages
-
-    leftImages, rightImages, timeStamps = LoadImages("00")
-    nImages = len(leftImages)
-
-    SLAM = System(strVocFile, strSettingsFile, "Stereo", bUseViewer=True)
-
-    for i in range(200):
-        print("FFFFFFFFFFFFFFFFFFFrame = ", i)
-        mleft = cv2.imread(leftImages[i], cv2.IMREAD_GRAYSCALE)
-        mright = cv2.imread(rightImages[i], cv2.IMREAD_GRAYSCALE)
-        timestamp = float(timeStamps[i])
-
-        Tcw = SLAM.track_stereo(mleft, mright, timestamp)
-        print(Tcw)
-
-    SLAM.mptLocalMapping_thread.join()
-    SLAM.mptViewer_thread.join()
 
 

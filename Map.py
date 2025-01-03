@@ -1,19 +1,19 @@
 import threading
+
 from ordered_set import OrderedSet
 
 class Map:
     def __init__(self):
         self.mMutexMapUpdate = threading.Lock()
-        # This avoid that two points are created simultaneously in separate threads (id conflict)
         self.mMutexPointCreation = threading.Lock()
         self.mMutexMap = threading.Lock()
 
-        self.mspKeyFrames = []  # Set of KeyFrames
-        self.mspMapPoints = []  # Set of MapPoints
-        self.mvpReferenceMapPoints = []  # List of reference MapPoints
-        self.mvpKeyFrameOrigins = []  # List of KeyFrame origins
-        self.mnMaxKFid = 0  # Maximum KeyFrame ID
-        self.mnBigChangeIdx = 0  # Index for tracking big changes
+        self.mspKeyFrames = []
+        self.mspMapPoints = []
+        self.mvpReferenceMapPoints = []
+        self.mvpKeyFrameOrigins = []
+        self.mnMaxKFid = 0
+        self.mnBigChangeIdx = 0
 
     def add_key_frame(self, pKF):
         with self.mMutexMap:
@@ -85,6 +85,3 @@ class Map:
         self.mvpKeyFrameOrigins.clear()
 
 
-if __name__ == "__main__":
-
-    mMap = Map()

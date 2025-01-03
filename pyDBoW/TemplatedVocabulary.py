@@ -1,6 +1,6 @@
 import numpy as np
 from collections import defaultdict
-from typing import List, Dict, Tuple
+
 from .BowVector import BowVector
 from .FeatureVector import FeatureVector
 from .FORB import FORB
@@ -78,8 +78,6 @@ class TemplatedVocabulary:
                     self.words.append(node)
                 else:
                     node.word_id = 0
-
-        print("Vocabulary loaded successfully.")
         return True
 
     def create_scoring_object(self):
@@ -118,7 +116,6 @@ class TemplatedVocabulary:
         fv = FeatureVector()
         mustNormalize = True
         node_id = 0
-        #for j in range(features.shape[1]):
 
         for i in range(features.shape[0]):
             word_id, node_id, weight = self.transform_feature(features[i], node_id, levels_up)
@@ -162,38 +159,5 @@ class TemplatedVocabulary:
         weight = self.nodes[final_id].weight
 
         return word_id, nid, weight
-
-
-if __name__ == "__main__":
-
-    vocabulary = TemplatedVocabulary(k=5, L=3, weighting="TF_IDF", scoring="L1_NORM")
-    vocabulary.load_from_text_file("./../Vocabulary/ORBvoc.txt")
-    """
-    print("word_id")
-    print([vocabulary.nodes[i].word_id for i in range(100)])
-    print("id")
-    print([vocabulary.nodes[i].id for i in range(100)])
-    print("weight")
-    print([vocabulary.nodes[i].weight for i in range(100)])
-    print("parent")
-    print([vocabulary.nodes[i].parent for i in range(100)])
-    print("children")
-    print([vocabulary.nodes[i].children for i in range(100)])
-    print("descriptor")
-    print([vocabulary.nodes[i].descriptor for i in range(32)])
-    exit()
-    """
-
-    with open("./../isolation/DBoW2/feature_0.txt", "r") as f1:
-        feature_0 = [np.fromstring(line.rstrip(), dtype=int, sep=' ') for line in f1]
-
-    with open("./../isolation/DBoW2/feature_1.txt", "r") as f2:
-        feature_1 = [np.fromstring(line.rstrip(), dtype=int, sep=' ') for line in f2]
-
-    # Test transforming features
-    bv1, fv1 = vocabulary.transform(feature_0, levels_up=4)
-    bv2, fv2 = vocabulary.transform(feature_1, levels_up=4)
-    score_v = vocabulary.score(bv1, bv2)
-    print("score", score_v)
 
 

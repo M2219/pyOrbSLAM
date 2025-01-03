@@ -7,9 +7,7 @@ from ORBMatcher import ORBMatcher
 from Optimizer import Optimizer
 
 class LocalMapping:
-
     mMutexReset = threading.Lock()
-
     def __init__(self, pSys, pMap):
 
         self.mMutexNewKFs = threading.Lock()
@@ -43,46 +41,31 @@ class LocalMapping:
             return len(self.mlNewKeyFrames)
 
     def run(self):
-        """
-        Main loop of the Local Mapping thread.
-        """
         self.mbFinished = False
         while True:
 
-            # Mark Local Mapping as busy
             self.set_accept_key_frames(False)
             time.sleep(0.1)
-            # Check if there are keyframes in the queue
             if self.check_new_key_frames():
 
-                # Process new keyframe
-
                 self.process_new_key_frame()
-
-                # check recent MapPoints
                 self.map_point_culling()
-
-                # Triangulate new MapPoints
                 self.create_new_map_points()
 
                 if not self.check_new_key_frames():
-                    # Search in neighbor keyframes and fuse point duplications
                     self.search_in_neighbors()
 
                 self.mbAbortBA = False
 
                 if not self.check_new_key_frames() and not self.stop_requested():
-                    # Perform local bundle adjustment
                     if self.mpMap.key_frames_in_map() > 2:
                         self.optimizer.local_bundle_adjustment(self.mpCurrentKeyFrame, self.mbAbortBA, self.mpMap)
 
-                    # Cull redundant local keyframes
                     self.key_frame_culling()
 
                 self.mpLoopCloser.insert_key_frame(self.mpCurrentKeyFrame)
 
             elif self.stop():
-                # Safe area to stop
                 while self.is_stopped() and not self.check_finish():
                     time.sleep(0.003)
 
@@ -91,7 +74,6 @@ class LocalMapping:
 
             self.reset_if_requested()
 
-            # Mark Local Mapping as available
             self.set_accept_key_frames(True)
 
             if self.check_finish():
@@ -141,39 +123,29 @@ class LocalMapping:
         self.mpMap.add_key_frame(self.mpCurrentKeyFrame);
 
     def map_point_culling(self):
-        """
-        Perform culling of recently added MapPoints.
-
-        Args:
-            mlpRecentAddedMapPoints (list): List of recently added MapPoints.
-            mpCurrentKeyFrame (KeyFrame): The current KeyFrame object.
-            mbMonocular (bool): Flag indicating whether the system is monocular.
-        """
         nCurrentKFid = self.mpCurrentKeyFrame.mnId
 
-        # Threshold for observations
         nThObs = 3
         cnThObs = nThObs
 
-        # Iterate over the list of recently added MapPoints
         lit = 0
         while lit < len(self.mlpRecentAddedMapPoints):
             pMP = self.mlpRecentAddedMapPoints[lit]
 
             if pMP.is_bad():
-                # Remove MapPoint if it is bad
                 self.mlpRecentAddedMapPoints.pop(lit)
+
             elif pMP.get_found_ratio() < 0.25:
-                # Set MapPoint as bad if found ratio is less than 0.25
                 pMP.set_bad_flag()
                 self.mlpRecentAddedMapPoints.pop(lit)
+
             elif (nCurrentKFid - pMP.mnFirstKFid) >= 2 and pMP.observations() <= cnThObs:
-                # Set MapPoint as bad if conditions on KF ID and observations are met
                 pMP.set_bad_flag()
                 self.mlpRecentAddedMapPoints.pop(lit)
+
             elif (nCurrentKFid - pMP.mnFirstKFid) >= 3:
-                # Remove MapPoint if it has been around too long
                 self.mlpRecentAddedMapPoints.pop(lit)
+
             else:
                 lit += 1
 
@@ -185,20 +157,17 @@ class LocalMapping:
 
         matcher = ORBMatcher(0.6, False)
 
-        # Retrieve current keyframe properties
         Rcw1 = self.mpCurrentKeyFrame.get_rotation()
         Rwc1 = Rcw1.T
         tcw1 = self.mpCurrentKeyFrame.get_translation()
         Ow1 = self.mpCurrentKeyFrame.get_camera_center()
         Tcw1 = np.append(Rcw1, tcw1, 1)
 
-
         fx1, fy1, cx1, cy1 = self.mpCurrentKeyFrame.fx, self.mpCurrentKeyFrame.fy, self.mpCurrentKeyFrame.cx, self.mpCurrentKeyFrame.cy
         invfx1, invfy1 = self.mpCurrentKeyFrame.invfx, self.mpCurrentKeyFrame.invfy
         ratioFactor = 1.5 * self.mpCurrentKeyFrame.mfScaleFactor
-        # Iterate through neighboring keyframes
+
         for i, pKF2 in enumerate(vpNeighKFs):
-            # Check for new keyframes
             if (i > 0) and (self.check_new_key_frames()):
                 return
 
@@ -206,14 +175,11 @@ class LocalMapping:
             vBaseline = Ow2 - Ow1
             baseline = np.linalg.norm(vBaseline)
 
-            # Check baseline for monocular or stereo configurations
             if baseline < pKF2.mb:
                 continue
 
-            # Compute fundamental matrix
             F12 = self.compute_f12(self.mpCurrentKeyFrame, pKF2)
 
-            # Find matches
             vMatchedIndices = matcher.search_for_triangulation(self.mpCurrentKeyFrame, pKF2, F12, bOnlyStereo=False)
 
             Rcw2 = pKF2.get_rotation()
@@ -224,7 +190,6 @@ class LocalMapping:
             fx2, fy2, cx2, cy2 = pKF2.fx, pKF2.fy, pKF2.cx, pKF2.cy
             invfx2, invfy2 = pKF2.invfx, pKF2.invfy
 
-            # Triangulate matches
             for idx1, idx2 in vMatchedIndices:
                 kp1, kp1_ur = self.mpCurrentKeyFrame.mvKeysUn[idx1], self.mpCurrentKeyFrame.mvuRight[idx1]
                 bStereo1 = kp1_ur>=0
@@ -243,9 +208,6 @@ class LocalMapping:
                 cosParallaxStereo1 = cosParallaxStereo
                 cosParallaxStereo2 = cosParallaxStereo
 
-                # Handle stereo information
-
-
                 if bStereo1:
                     cosParallaxStereo1 = np.cos(2 * np.arctan2(self.mpCurrentKeyFrame.mb / 2, self.mpCurrentKeyFrame.mvDepth[idx1]))
                 elif bStereo2:
@@ -254,7 +216,6 @@ class LocalMapping:
                 cosParallaxStereo = min(cosParallaxStereo1, cosParallaxStereo2)
 
                 if cosParallaxRays < cosParallaxStereo and cosParallaxRays > 0 and (bStereo1 or bStereo2 or cosParallaxRays < 0.9998):
-                    # Triangulate 3D point
                     A = np.vstack([
                         xn1[0] * Tcw1[2, :] - Tcw1[0, :],
                         xn1[1] * Tcw1[2, :] - Tcw1[1, :],
@@ -270,13 +231,10 @@ class LocalMapping:
 
                 elif bStereo2 and cosParallaxStereo2 < cosParallaxStereo1:
                     x3D = pKF2.unproject_stereo(idx2)
+
                 else:
                     continue
 
-
-                # Transform x3D to homogeneous coordinates
-
-                # Check triangulation in front of cameras
                 z1 = np.dot(Rcw1[2:3, :], x3D)[0][0] + tcw1[2, 0]
                 if z1 <= 0:
                     continue
@@ -285,7 +243,6 @@ class LocalMapping:
                 if z2 <= 0:
                     continue
 
-                # Check reprojection error in first keyframe
                 sigmaSquare1 = self.mpCurrentKeyFrame.mvLevelSigma2[kp1.octave]
                 x1 = np.dot(Rcw1[0:1, :], x3D)[0][0] + tcw1[0, 0]
                 y1 = np.dot(Rcw1[1:2, :], x3D)[0][0] + tcw1[1, 0]
@@ -305,7 +262,6 @@ class LocalMapping:
                     if (errX1**2 + errY1**2 + errX1_r**2) > 7.8 * sigmaSquare1:
                         continue
 
-                # Check reprojection error in second keyframe
                 sigmaSquare2 = pKF2.mvLevelSigma2[kp2.octave]
                 x2 = np.dot(Rcw2[0:1, :], x3D)[0][0] + tcw2[0, 0]
                 y2 = np.dot(Rcw2[1:2, :], x3D)[0][0] + tcw2[1, 0]
@@ -325,7 +281,6 @@ class LocalMapping:
                     if (errX2**2 + errY2**2 + errX2_r**2) > 7.8 * sigmaSquare2:
                         continue
 
-                # Check scale consistency
                 normal1, normal2 = x3D - Ow1, x3D - Ow2
                 dist1, dist2 = np.linalg.norm(normal1), np.linalg.norm(normal2)
 
@@ -338,7 +293,6 @@ class LocalMapping:
                 if ratioDist * ratioFactor < ratioOctave or ratioDist > ratioOctave * ratioFactor:
                     continue
 
-                # Create MapPoint
                 pMP = MapPoint(x3D, self.mpCurrentKeyFrame, self.mpMap, idxF=idx1, kframe_bool=True)
                 pMP.add_observation(self.mpCurrentKeyFrame, idx1)
                 pMP.add_observation(pKF2, idx2)
@@ -354,24 +308,19 @@ class LocalMapping:
                 nnew += 1
 
     def compute_f12(self, pKF1, pKF2):
-        # Get rotations and translations
         R1w = pKF1.get_rotation()
         t1w = pKF1.get_translation()
         R2w = pKF2.get_rotation()
         t2w = pKF2.get_translation()
 
-        # Compute relative rotation and translation
         R12 = R1w @ R2w.T
         t12 = -R1w @ R2w.T @ t2w + t1w
 
-        # Compute skew-symmetric matrix of t12
         t12x = self.skew_symmetric_matrix(t12)
 
-        # Get intrinsic parameters
         K1 = pKF1.mK
         K2 = pKF2.mK
 
-        # Compute the fundamental matrix
         F12 = np.linalg.inv(K1.T) @ t12x @ R12 @ np.linalg.inv(K2)
 
         return F12
@@ -383,7 +332,6 @@ class LocalMapping:
 
     def search_in_neighbors(self):
 
-        # Retrieve neighbor keyframes
         nn = 10
         vpNeighKFs = self.mpCurrentKeyFrame.get_best_covisibility_key_frames(nn)
 
@@ -396,7 +344,6 @@ class LocalMapping:
             vpTargetKFs.append(pKFi)
             pKFi.mnFuseTargetForKF = self.mpCurrentKeyFrame.mnId
 
-            # Extend to some second neighbors
             vpSecondNeighKFs = pKFi.get_best_covisibility_key_frames(5)
             for pKFi2 in vpSecondNeighKFs:
                 if (
@@ -407,13 +354,11 @@ class LocalMapping:
                     continue
                 vpTargetKFs.append(pKFi2)
 
-        # Search matches by projection from current KF in target KFs
         vpMapPointMatches = self.mpCurrentKeyFrame.get_map_point_matches()
         matcher = ORBMatcher()
         for pKFi in vpTargetKFs:
             matcher.fuse_pkf_mp(pKFi, vpMapPointMatches, th=3.0)
 
-        # Search matches by projection from target KFs in current KF
         vpFuseCandidates = []
         for pKFi in vpTargetKFs:
             vpMapPointsKFi = pKFi.get_map_point_matches()
@@ -428,7 +373,6 @@ class LocalMapping:
                 vpFuseCandidates.append(pMP)
 
         matcher.fuse_pkf_mp(self.mpCurrentKeyFrame, vpFuseCandidates, th=3.0)
-        # Update points
         vpMapPointMatches = self.mpCurrentKeyFrame.get_map_point_matches()
         for pMP in vpMapPointMatches:
             if pMP:
@@ -436,16 +380,9 @@ class LocalMapping:
                     pMP.compute_distinctive_descriptors()
                     pMP.update_normal_and_depth()
 
-        # Update connections in covisibility graph
         self.mpCurrentKeyFrame.update_connections()
 
     def key_frame_culling(self):
-        """
-        Perform keyframe culling to remove redundant keyframes.
-        A keyframe is considered redundant if 90% of the MapPoints it sees
-        are seen in at least 3 other keyframes in the same or finer scale.
-        """
-        # Get local keyframes
         vpLocalKeyFrames = self.mpCurrentKeyFrame.get_vector_covisible_key_frames()
 
         for pKF in vpLocalKeyFrames:
@@ -486,37 +423,27 @@ class LocalMapping:
                             if nObs >= thObs:
                                 nRedundantObservations += 1
 
-            # Mark keyframe as bad if 90% of its MapPoints are redundant
             if nRedundantObservations > 0.9 * nMPs:
                 pKF.set_bad_flag()
 
     def request_reset(self):
-        # Set the reset request flag
         with self.mMutexReset:
             self.mbResetRequested = True
-        # Wait until the reset request flag is cleared
+
         while True:
             with self.mMutexReset:
                 if not self.mbResetRequested:
                     break
-            time.sleep(0.003)  # Sleep for 3 milliseconds
+            time.sleep(0.003)
 
     def request_stop(self):
-        # Lock mMutexStop and set mbStopRequested to True
         with self.mMutexStop:
             self.mbStopRequested = True
 
-        # Lock mMutexNewKFs and set mbAbortBA to True
         with self.mMutexNewKFs:
             self.mbAbortBA = True
 
     def stop_requested(self):
-        """
-        Checks if a stop has been requested.
-
-        Returns:
-            bool: True if stop is requested, False otherwise.
-        """
         with self.mMutexStop:
             return self.mbStopRequested
 
@@ -532,12 +459,6 @@ class LocalMapping:
                 self.mlNewKeyFrames.clear()
 
     def stop(self):
-        """
-        Attempts to stop the local mapping process.
-
-        Returns:
-            bool: True if the system stops, False otherwise.
-        """
         with self.mMutexStop:
             if self.mbStopRequested and not self.mbNotStop:
                 self.mbStopped = True
@@ -582,76 +503,3 @@ class LocalMapping:
         with self.mMutexFinish:
             return self.mbFinished
 
-if __name__ == "__main__":
-
-    import yaml
-    from pyDBoW.TemplatedVocabulary import TemplatedVocabulary
-    from ORBExtractor import ORBExtractor
-    from stereo_kitti import LoadImages
-    from KeyFrameDatabase import KeyFrameDatabase
-    from Map import Map
-    from FrameDrawer import FrameDrawer
-    from MapDrawer import MapDrawer
-    from Tracking import Tracking
-    import cv2
-    vocabulary = TemplatedVocabulary(k=5, L=3, weighting="TF_IDF", scoring="L1_NORM")
-    vocabulary.load_from_text_file("./Vocabulary/ORBvoc.txt")
-
-    with open("configs/KITTI00-02.yaml", 'r') as f:
-        cfg = yaml.load(f, Loader=yaml.SafeLoader)
-
-    leftImages, rightImages, timeStamps = LoadImages("00")
-    nImages = len(leftImages)
-
-    mpKeyFrameDatabase = KeyFrameDatabase(vocabulary)
-
-    mpMap = Map()
-
-    mpFrameDrawer = FrameDrawer(mpMap)
-    mpMapDrawer = MapDrawer(mpMap, cfg)
-
-    mpLocalMapper = LocalMapping(mpMap, ss=ss)
-
-    mpTracker = Tracking(False, vocabulary, mpFrameDrawer, mpMapDrawer,
-                                  mpMap, mpKeyFrameDatabase, cfg, sensor="Stereo")
-
-    mptLocalMapping_thread = threading.Thread(target=mpLocalMapper.run)
-    # Start threads
-    mptLocalMapping_thread.start()
-
-    mbActivateLocalizationMode = False
-    mbDeactivateLocalizationMode = False
-    mbReset = False
-
-    mMutexMode = threading.Lock()
-
-    for i in range(10):
-
-        mleft = cv2.imread(leftImages[i], cv2.IMREAD_GRAYSCALE)
-        mright = cv2.imread(rightImages[i], cv2.IMREAD_GRAYSCALE)
-        timestamp = float(timeStamps[i])
-
-        with mMutexMode:
-            if mbActivateLocalizationMode:
-                mpLocalMapper.request_stop()
-
-                # Wait until Local Mapping has effectively stopped
-                while not mpLocalMapper.is_stopped():
-                    time.sleep(0.001)
-
-                mpTracker.inform_only_tracking(True)
-                mbActivateLocalizationMode = False
-
-            if mbDeactivateLocalizationMode:
-                mpTracker.inform_only_tracking(False)
-                mpLocalMapper.release()
-                mbDeactivateLocalizationMode = False
-
-        with LocalMapping.mMutexReset:  # Equivalent to after viewer and loop closing complete reset() function in the tracking
-            if mbReset:
-                mpTracker.reset()
-                mbReset = False
-
-        Twc = mpTracker.grab_image_stereo(mleft, mright, timestamp)
-
-    mptLocalMapping_thread.join()

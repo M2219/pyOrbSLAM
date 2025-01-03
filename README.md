@@ -27,7 +27,8 @@ cd .. && cd pyORBExtractor
 bash build.sh
 
 ```
-Download and extract [ORBvoc.txt](https://github.com/raulmur/ORB_SLAM2/tree/master/Vocabulary) inside the Vocabulary
+```mkdir Vocabulary``` 
+Download and extract [ORBvoc.txt](https://github.com/raulmur/ORB_SLAM2/tree/master/Vocabulary) inside the ```Vocabulary```
 
 ### Dependencies
 
@@ -36,7 +37,7 @@ pip install opencv-python
 pip install ordereddict
 
 ```
-Install pypangolin from [Pangolin](https://github.com/stevenlovegrove/Pangolin/tree/master)
+Install ```pypangolin``` from [Pangolin](https://github.com/stevenlovegrove/Pangolin/tree/master)
 
 ## Data Preparation
 * [KITTI Odometry](http://www.cvlibs.net/datasets/kitti/eval_odometry.php)

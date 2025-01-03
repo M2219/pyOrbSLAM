@@ -16,7 +16,6 @@ parser.add_argument("--pathToSettings", default="configs/KITTI00-02.yaml", help=
 
 args = parser.parse_args()
 
-
 def read_all_lines(filename: str) -> List[str]:
     with open(filename) as f:
         lines = [line.rstrip() for line in f.readlines()]
@@ -30,7 +29,6 @@ def LoadImages(pathToSeq):
 
     return imageLeft, imageRight, vTimestamps
 
-
 def main():
 
     leftImages, rightImages, timeStamps = LoadImages(args.pathToSequence)
@@ -38,7 +36,8 @@ def main():
 
     SLAM = System(args.pathToVocabulary, args.pathToSettings, sensor="STEREO", bUseViewer=True)
 
-    for i in range(2000): #nImages
+    for i in range(nImages):
+
         print("FFFFFFFFFFFFFFFFFFFrame = ", i)
         mleft = cv2.imread(leftImages[i], cv2.IMREAD_GRAYSCALE)
         mright = cv2.imread(rightImages[i], cv2.IMREAD_GRAYSCALE)
@@ -50,14 +49,9 @@ def main():
     SLAM.shutdown();
     SLAM.save_trajectory_kitti("CameraTrajectory.txt");
 
-
     return 1
 
-
-
 if __name__ == "__main__":
-
-
     main()
 
 

@@ -1,4 +1,5 @@
 import numpy as np
+
 class GeneralScoring:
     def __init__(self):
         """Class implementing multiple scoring methods for BowVectors."""
@@ -89,51 +90,3 @@ class GeneralScoring:
         """Computes the dot product similarity score."""
         shared_keys = set(v1.keys()) & set(v2.keys())
         return sum(v1[k] * v2[k] for k in shared_keys)
-
-
-if __name__ == "__main__":
-
-  import subprocess
-  from collections import defaultdict
-  from BowVector import BowVector
-
-  g = GeneralScoring()
-  # Python Scoring Classes
-  # Sample BowVectors
-  v1 = BowVector()
-  v2 = BowVector()
-
-  v1.add_weight(1, 0.1);
-  v1.add_weight(1, 0.03);
-  v1.add_weight(2, 0.2);
-  v1.add_weight(3, 0.37);
-  v1.add_weight(4, 0.343);
-  v1.add_weight(5, 0.32);
-  v1.add_weight(6, 0.37);
-
-  print(v1.word_weights)
-
-  v2.add_weight(1, 0.12);
-  v2.add_weight(1, 0.18);
-  v2.add_weight(3, 0.423);
-  v2.add_weight(4, 0.516);
-  v2.add_weight(7, 0.526);
-  v2.add_weight(8, 0.566);
-  v2.add_weight(9, 0.576);
-
-  print(v2.word_weights)
-
-  scorers = {
-      "L1": g.l1_score(v1.word_weights, v2.word_weights),
-      "L2": g.l2_score(v1.word_weights, v2.word_weights),
-      "ChiSquare": g.chi_square_score(v1.word_weights, v2.word_weights),
-      "KL": g.kl_score(v1.word_weights, v2.word_weights),
-      "Bhattacharyya": g.bhattacharyya_score(v1.word_weights, v2.word_weights),
-      "DotProduct": g.dot_product_score(v1.word_weights, v2.word_weights),
-  }
-
-
-  print("Python Scoring Results:")
-  for name, score in scorers.items():
-      print(f"{name} Score: {score:.4f}")
-

@@ -6,11 +6,10 @@ class KeyFrameDatabase:
     def __init__(self, voc):
         self.mpVoc = voc
         self.mMutex = threading.Lock()
-        self.mvInvertedFile = {}  # Dictionary to store inverted file data
+        self.mvInvertedFile = {}
 
     def add(self, pKF):
-        """Add a keyframe to the database."""
-        with self.mMutex:  # Ensure thread safety
+        with self.mMutex:
             for word_id in pKF.mBowVec.keys():
                 if word_id not in self.mvInvertedFile:
                     self.mvInvertedFile[word_id] = []
@@ -18,28 +17,20 @@ class KeyFrameDatabase:
                 self.mvInvertedFile[word_id].append(pKF)
 
     def erase(self, pKF):
-        """Erase a keyframe from the database."""
-        with self.mMutex:  # Ensure thread safety
-            # Iterate over the words in the BoW vector of the keyframe
+        with self.mMutex:
             for word_id in pKF.mBowVec.keys():
-                # Get the list of keyframes sharing the word
                 if word_id in self.mvInvertedFile:
                     lKFs = self.mvInvertedFile[word_id]
-                    # Remove the keyframe if it exists in the list
                     if pKF in lKFs:
                         lKFs.remove(pKF)
 
     def clear(self):
-        """Clear the inverted file and resize it to the vocabulary size."""
         self.mvInvertedFile = {i: [] for i in range(self.vocabulary_size)}
 
     def detect_loop_candidates(self, pKF, min_score):
-        """Detect loop candidates for a given KeyFrame."""
         spConnectedKeyFrames = pKF.get_connected_key_frames()
         lKFsSharingWords = []
-        #print("-->", self.mvInvertedFile)
-        # Search all keyframes that share a word with the current keyframe
-        # Discard keyframes connected to the query keyframe
+
         with self.mMutex:
             for word_id in pKF.mBowVec.keys():
                 if word_id not in self.mvInvertedFile:
@@ -49,20 +40,16 @@ class KeyFrameDatabase:
                 for pKFi in lKFs:
                     if pKFi.mnLoopQuery != pKF.mnId:
                         pKFi.mnLoopWords = 0
-                        if pKFi not in spConnectedKeyFrames: #not in for debug in
+                        if pKFi not in spConnectedKeyFrames:
                             pKFi.mnLoopQuery = pKF.mnId
                             lKFsSharingWords.append(pKFi)
                     pKFi.mnLoopWords += 1
 
-        print("-->", lKFsSharingWords)
         if not lKFsSharingWords:
             return []
-
-        # Determine the maximum number of common words
         max_common_words = max(pKFi.mnLoopWords for pKFi in lKFsSharingWords)
         min_common_words = int(max_common_words * 0.8)
 
-        # Compute similarity scores and filter matches
         lScoreAndMatch = []
         for pKFi in lKFsSharingWords:
             if pKFi.mnLoopWords > min_common_words:
@@ -74,7 +61,6 @@ class KeyFrameDatabase:
         if not lScoreAndMatch:
             return []
 
-        # Accumulate scores based on covisibility
         lAccScoreAndMatch = []
         best_acc_score = min_score
 
@@ -96,7 +82,6 @@ class KeyFrameDatabase:
             if acc_score > best_acc_score:
                 best_acc_score = acc_score
 
-        # Filter keyframes based on accumulated score
         min_score_to_retain = 0.75 * best_acc_score
         spAlreadyAddedKF = set()
         vpLoopCandidates = []
@@ -109,10 +94,8 @@ class KeyFrameDatabase:
         return vpLoopCandidates
 
     def detect_relocalization_candidates(self, F):
-        """Detect relocalization candidates for a given frame."""
         lKFsSharingWords = []
 
-        # Search all keyframes that share a word with the current frame
         with self.mMutex:
             for word_id in F.mBowVec.keys():
                 if word_id not in self.mvInvertedFile:
@@ -126,16 +109,12 @@ class KeyFrameDatabase:
                         lKFsSharingWords.append(pKFi)
                     pKFi.mnRelocWords += 1
 
-        print("-->", lKFsSharingWords)
-
         if not lKFsSharingWords:
             return []
 
-        # Determine the maximum number of common words
         maxCommonWords = max(pKFi.mnRelocWords for pKFi in lKFsSharingWords)
         minCommonWords = int(maxCommonWords * 0.8)
 
-        # Compute similarity scores
         lScoreAndMatch = []
         for pKFi in lKFsSharingWords:
             if pKFi.mnRelocWords > minCommonWords:
@@ -146,7 +125,6 @@ class KeyFrameDatabase:
         if not lScoreAndMatch:
             return []
 
-        # Accumulate scores based on covisibility
         lAccScoreAndMatch = []
         bestAccScore = 0
 
@@ -169,7 +147,6 @@ class KeyFrameDatabase:
             lAccScoreAndMatch.append((accScore, pBestKF))
             bestAccScore = max(bestAccScore, accScore)
 
-        # Return keyframes with score higher than 0.75 * bestAccScore
         minScoreToRetain = 0.75 * bestAccScore
         spAlreadyAddedKF = set()
         vpRelocCandidates = []

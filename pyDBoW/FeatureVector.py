@@ -18,22 +18,3 @@ class FeatureVector:
         self.data = OrderedDict(sorted(self.data.items()))
         return self.data
 
-if __name__ == "__main__":
-
-    # Python equivalent test
-    python_fv = FeatureVector()
-    a=python_fv.addFeature(1, 10)
-    print(a)
-
-    a1=python_fv.addFeature(1, 20)
-    print(a1)
-
-    a2=python_fv.addFeature(2, 30)
-    print(a2)
-
-    a3=python_fv.addFeature(3, 40)
-    print(a3)
-
-    a4=python_fv.addFeature(2, 50)
-    print(a4)
-

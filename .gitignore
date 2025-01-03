@@ -1,11 +1,4 @@
 \00
 \Vocabulary
-\ORB_SLAM2
-\isolation
-\test
-\test.cpp
-\images
-\output.txt
 \pyORBExtractor\build
 \pyORBExtractor\lib
-\CameraTrajectory.txt

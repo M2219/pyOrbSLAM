@@ -5,33 +5,28 @@ import cv2
 class FrameDrawer:
     def __init__(self, pMap):
 
-        self.mMutex = threading.Lock()  # Mutex for thread safety
-
+        self.mMutex = threading.Lock()
         self.mpMap = pMap
         self.mstate = "SYSTEM_NOT_READY"
         self.mIm = np.zeros((480, 640, 3), dtype=np.uint8)
-        self.mvCurrentKeys = []  # Current frame keypoints
-        self.mvIniKeys = []  # Initialization keypoints
-        self.mvIniMatches = []  # Matches with initialization keypoints
-        self.mvbVO = []  # Tracked visual odometry points
-        self.mvbMap = []  # Tracked map points
-        self.mnTracked = 0  # Count of tracked map points
-        self.mnTrackedVO = 0  # Count of tracked visual odometry points
-        self.mbOnlyTracking = False  # Mode: Only tracking or SLAM
+        self.mvCurrentKeys = []
+        self.mvIniKeys = []
+        self.mvIniMatches = []
+        self.mvbVO = []
+        self.mvbMap = []
+        self.mnTracked = 0
+        self.mnTrackedVO = 0
+        self.mbOnlyTracking = False
 
     def draw_frame(self):
-        """
-        Draws the current frame with keypoints, matches, and tracking information.
-        """
         im = None
-        vIniKeys = []  # Initialization keypoints
-        vMatches = []  # Matches with initialization keypoints
-        vCurrentKeys = []  # Current frame keypoints
-        vbVO = []  # Tracked visual odometry points
-        vbMap = []  # Tracked map points
-        state = None  # Tracking state
+        vIniKeys = []
+        vMatches = []
+        vCurrentKeys = []
+        vbVO = []
+        vbMap = []
+        state = None
 
-        # Copy variables within scoped mutex
         with self.mMutex:
             state = self.mstate
             if self.mstate == "SYSTEM_NOT_READY":
@@ -56,18 +51,16 @@ class FrameDrawer:
         if im is None:
             return None
 
-        # Convert to color image if grayscale
         if len(im.shape) < 3 or im.shape[2] != 3:
             im = cv2.cvtColor(im, cv2.COLOR_GRAY2BGR)
 
-        # Draw
-        if state == "NOT_INITIALIZED":  # INITIALIZING
+        if state == "NOT_INITIALIZED":
             for i, match in enumerate(vMatches):
                 if match >= 0:
                     pt1 = tuple(map(int, vIniKeys[i].pt))
                     pt2 = tuple(map(int, vCurrentKeys[match].pt))
-                    cv2.line(im, pt1, pt2, (0, 255, 0))  # Green line
-        elif state == "OK":  # TRACKING
+                    cv2.line(im, pt1, pt2, (0, 255, 0))
+        elif state == "OK":
             self.mnTracked = 0
             self.mnTrackedVO = 0
             r = 5
@@ -77,32 +70,20 @@ class FrameDrawer:
                     pt2 = (int(keypoint.pt[0] + r), int(keypoint.pt[1] + r))
                     center = tuple(map(int, keypoint.pt))
 
-                    if vbMap[i]:  # Match to a MapPoint
-                        cv2.rectangle(im, pt1, pt2, (0, 255, 0))  # Green rectangle
-                        cv2.circle(im, center, 2, (0, 255, 0), -1)  # Green circle
+                    if vbMap[i]:
+                        cv2.rectangle(im, pt1, pt2, (0, 255, 0))
+                        cv2.circle(im, center, 2, (0, 255, 0), -1)
                         self.mnTracked += 1
-                    else:  # Match to a visual odometry MapPoint
-                        cv2.rectangle(im, pt1, pt2, (255, 0, 0))  # Blue rectangle
-                        cv2.circle(im, center, 2, (255, 0, 0), -1)  # Blue circle
+                    else:
+                        cv2.rectangle(im, pt1, pt2, (255, 0, 0))
+                        cv2.circle(im, center, 2, (255, 0, 0), -1)
                         self.mnTrackedVO += 1
 
-        # Add tracking information
         imWithInfo = self.draw_text_info(im, state)
         return imWithInfo
 
     def draw_text_info(self, im, nstate):
-        """
-        Adds text information about the current tracking state to the image.
-
-        Parameters:
-        - im: The input image (numpy array).
-        - nstate: The tracking state.
-
-        Returns:
-        - imText: The output image with text information added.
-        """
         s = ""
-
         if nstate == "NO_IMAGES_YET":
             s = " WAITING FOR IMAGES"
         elif nstate == "NOT_INITIALIZED":
@@ -122,57 +103,39 @@ class FrameDrawer:
         elif nstate == "SYSTEM_NOT_READY":
             s = " LOADING ORB VOCABULARY. PLEASE WAIT..."
 
-        # Calculate text size
         baseline = 0
         textSize = cv2.getTextSize(s, cv2.FONT_HERSHEY_PLAIN, 1, 1)[0]
 
-        # Create a new image with space for text
         imText = np.zeros((im.shape[0] + textSize[1] + 10, im.shape[1], im.shape[2]), dtype=im.dtype)
-        imText[:im.shape[0], :im.shape[1]] = im  # Copy original image
+        imText[:im.shape[0], :im.shape[1]] = im
 
-        # Add a black bar for text at the bottom
         imText[im.shape[0]:] = 0
 
-        # Add text to the image
         cv2.putText(imText, s, (5, imText.shape[0] - 5), cv2.FONT_HERSHEY_PLAIN, 1, (255, 255, 255), 1)
 
         return imText
 
-
-
     def update(self, pTracker):
-        """
-        Update the frame drawer with information from the tracker.
-
-        Parameters:
-        - pTracker: Tracker object providing the latest frame and state.
-        """
         with self.mMutex:
-            # Copy grayscale image
-            self.mIm = pTracker.mImGray.copy()  # Assuming pTracker.mImGray is a numpy array
+            self.mIm = pTracker.mImGray.copy()
 
-            # Copy current keypoints and initialize flags
             self.mvCurrentKeys = pTracker.mCurrentFrame.mvKeys
             N = len(self.mvCurrentKeys)
             self.mvbVO = [False] * N
             self.mvbMap = [False] * N
             self.mbOnlyTracking = pTracker.mbOnlyTracking
 
-            # Handle states
-            if pTracker.mLastProcessedState == "NOT_INITIALIZED": ################ check this loop
+            if pTracker.mLastProcessedState == "NOT_INITIALIZED":
                 self.mvIniKeys = pTracker.mCurrentFrame.mvKeys
-                #self.mvIniMatches = pTracker.mvIniMatches
 
             elif pTracker.mLastProcessedState == "OK":
-                # Mark map points and visual odometry points
                 for i in range(pTracker.mCurrentFrame.N):
                     pMP = pTracker.mCurrentFrame.mvpMapPoints[i]
                     if pMP:
-                        if not pTracker.mCurrentFrame.mvbOutlier[i]:  # Not an outlier
+                        if not pTracker.mCurrentFrame.mvbOutlier[i]:
                             if len(pMP.get_observations()) > 0:
-                                self.mvbMap[i] = True  # Map point
+                                self.mvbMap[i] = True
                             else:
-                                self.mvbVO[i] = True  # Visual odometry point
+                                self.mvbVO[i] = True
 
-            # Update tracking state
             self.mstate = pTracker.mLastProcessedState
