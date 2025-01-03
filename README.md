@@ -5,7 +5,7 @@ This repository provides a pythonic implementation of [ORB-SLAM2](https://github
 # Note:
 * The repository has tried to keep the pythonic version as close as possible to the original repository. Therefore, some modules may run slower than the c++ version.
 However, modules can be changed to efficiently increase the speed.
-* Current version only support the stereo tracking
+* The current version only supports the stereo tracking
 
 # To increase the speed
 
