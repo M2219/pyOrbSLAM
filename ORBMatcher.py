@@ -127,7 +127,7 @@ class ORBMatcher:
 
         return nMatches, vpMapPointMatches
 
-    def search_by_BoW_kf_kf(self, pKF1, pKF2, vpMatches12):
+    def search_by_BoW_kf_kf(self, pKF1, pKF2):
         vKeysUn1 = pKF1.mvKeysUn
         vFeatVec1 = pKF1.mFeatVec
 
@@ -139,7 +139,7 @@ class ORBMatcher:
         vpMapPoints2 = pKF2.get_map_point_matches()
         Descriptors2 = pKF2.mDescriptors
 
-        vpMatches12[:] = [None] * len(vpMapPoints1)
+        vpMatches12 = [None] * len(vpMapPoints1)
         vbMatched2 = [False] * len(vpMapPoints2)
 
         rotHist = [[] for _ in range(HISTO_LENGTH)]
@@ -219,7 +219,7 @@ class ORBMatcher:
                     vpMatches12[idx] = None
                     nmatches -= 1
 
-        return nmatches
+        return nmatches, vpMatches12
 
 
     def search_by_projection_f_p(self, frame, vp_map_points, th):
@@ -343,12 +343,12 @@ class ORBMatcher:
         factor = 1.0 / HISTO_LENGTH
 
         Rcw = current_frame.mTcw[:3, :3]
-        tcw = current_frame.mTcw[:3, 3]
+        tcw = current_frame.mTcw[:3, 3:4]
 
         twc = -Rcw.T @ tcw
 
         Rlw = last_frame.mTcw[:3, :3]
-        tlw = last_frame.mTcw[:3, 3]
+        tlw = last_frame.mTcw[:3, 3:4]
 
         tlc = Rlw @ twc + tlw
 
@@ -362,7 +362,7 @@ class ORBMatcher:
 
                     # Project
                     x3Dw = pMP.get_world_pos()
-                    x3Dc = Rcw @ x3Dw + np.expand_dims(tcw, axis=0).T
+                    x3Dc = Rcw @ x3Dw +  tcw #np.expand_dims(tcw, axis=0).T
                     xc, yc, zc = x3Dc[0][0], x3Dc[1][0], x3Dc[2][0]
                     invzc = 1.0 / zc
 
@@ -445,7 +445,7 @@ class ORBMatcher:
 
         return n_matches
 
-    def fuse(self, pKF, Scw, vpPoints, th, vpReplacePoint):
+    def fuse_kf_scw_mp(self, pKF, Scw, vpPoints, th, vpReplacePoint):
         """
         Fuse map points into a keyframe by projecting and matching them.
 
@@ -466,11 +466,11 @@ class ORBMatcher:
         sRcw = Scw[:3, :3]
         scw = np.sqrt(np.dot(sRcw[0], sRcw[0]))
         Rcw = sRcw / scw
-        tcw = Scw[:3, 3] / scw
+        tcw = Scw[:3, 3:4] / scw
         Ow = -Rcw.T @ tcw
 
         # Set of MapPoints already found in the KeyFrame
-        spAlreadyFound = set(pKF.get_map_points())
+        spAlreadyFound = pKF.get_map_points()
 
         nFused = 0
         nPoints = len(vpPoints)
@@ -487,7 +487,7 @@ class ORBMatcher:
             p3Dw = pMP.get_world_pos()
 
             # Transform into camera coordinates
-            p3Dc = Rcw @ p3Dw + np.expand_dims(tcw, axis=0).T
+            p3Dc = Rcw @ p3Dw + tcw #np.expand_dims(tcw, axis=1)
 
             # Depth must be positive
             if p3Dc[2][0] < 0.0:
@@ -507,7 +507,7 @@ class ORBMatcher:
             # Check depth constraints
             maxDistance = pMP.get_max_distance_invariance()
             minDistance = pMP.get_min_distance_invariance()
-            PO = p3Dw - Ow
+            PO = p3Dw - Ow #np.expand_dims(Ow, axis=1)
             dist3D = np.linalg.norm(PO)
 
             if dist3D < minDistance or dist3D > maxDistance:
@@ -515,7 +515,7 @@ class ORBMatcher:
 
             # Check viewing angle
             Pn = pMP.get_normal()
-            if np.dot(PO, Pn) < 0.5 * dist3D:
+            if np.dot(PO.T, Pn) < 0.5 * dist3D:
                 continue
 
             # Predict scale level
@@ -559,7 +559,7 @@ class ORBMatcher:
                     pKF.add_map_point(pMP, bestIdx)
                 nFused += 1
 
-        return nFused
+        return nFused, vpReplacePoint
 
     def fuse_pkf_mp(self, pKF, vpMapPoints, th):
         """
@@ -836,6 +836,351 @@ class ORBMatcher:
         # Check threshold
         threshold = 3.84 * pKF2.mvLevelSigma2[kp2.octave]
         return dsqr < threshold
+
+    def search_by_sim3(self, pKF1, pKF2, vpMatches12, s12, R12, t12, th):
+        """
+        Find correspondences between keyframes using the Sim3 transformation.
+
+        Parameters:
+        - pKF1, pKF2: Keyframes
+        - vpMatches12: Matches between keyframes
+        - s12: Scale factor
+        - R12, t12: Rotation and translation between keyframes
+        - th: Search radius multiplier
+        """
+        fx, fy = pKF1.fx, pKF1.fy
+        cx, cy = pKF1.cx, pKF1.cy
+
+        # Camera 1 and Camera 2 poses
+        R1w, t1w = pKF1.get_rotation(), pKF1.get_translation()
+        R2w, t2w = pKF2.get_rotation(), pKF2.get_translation()
+
+        # Transformation between cameras
+        sR12 = s12 * R12
+        sR21 = (1.0 / s12) * R12.T
+        t21 = -sR21 @ t12
+
+        vpMapPoints1 = pKF1.get_map_point_matches()
+        vpMapPoints2 = pKF2.get_map_point_matches()
+
+        N1, N2 = len(vpMapPoints1), len(vpMapPoints2)
+
+        vbAlreadyMatched1 = [False] * N1
+        vbAlreadyMatched2 = [False] * N2
+
+        for i, pMP in enumerate(vpMatches12):
+            if pMP:
+                vbAlreadyMatched1[i] = True
+                idx2 = pMP.get_index_in_keyframe(pKF2)
+                if 0 <= idx2 < N2:
+                    vbAlreadyMatched2[idx2] = True
+
+        vnMatch1 = [-1] * N1
+        vnMatch2 = [-1] * N2
+
+        # Transform from KF1 to KF2 and search
+        for i1, pMP in enumerate(vpMapPoints1):
+            if not pMP or vbAlreadyMatched1[i1] or pMP.is_bad():
+                continue
+
+            p3Dw = pMP.get_world_pos()
+            p3Dc1 = R1w @ p3Dw + t1w
+            p3Dc2 = sR21 @ p3Dc1 + t21
+
+            if p3Dc2[2] < 0.0:
+                continue
+
+            invz = 1.0 / p3Dc2[2]
+            x, y = p3Dc2[0] * invz, p3Dc2[1] * invz
+            u, v = fx * x + cx, fy * y + cy
+
+            if not pKF2.is_in_image(u, v):
+                continue
+
+            maxDistance = pMP.get_max_distance_invariance()
+            minDistance = pMP.get_min_distance_invariance()
+            dist3D = np.linalg.norm(p3Dc2)
+
+            if not (minDistance <= dist3D <= maxDistance):
+                continue
+
+            nPredictedLevel = pMP.predict_scale(dist3D, pKF2)
+            radius = th * pKF2.mvScaleFactors[nPredictedLevel]
+
+            vIndices = pKF2.get_features_in_area(u, v, radius)
+
+            if not vIndices:
+                continue
+
+            dMP = pMP.get_descriptor()
+            bestDist, bestIdx = np.inf, -1
+            for idx in vIndices:
+                kp = pKF2.mvKeysUn[idx]
+                if not (nPredictedLevel - 1 <= kp.octave <= nPredictedLevel):
+                    continue
+
+                dKF = pKF2.mDescriptors[idx]
+                dist = self.descriptor_distance(dMP, dKF)
+
+                if dist < bestDist:
+                    bestDist, bestIdx = dist, idx
+
+            if bestDist <= TH_HIGH:
+                vnMatch1[i1] = bestIdx
+
+        # Transform from KF2 to KF1 and search
+        for i2, pMP in enumerate(vpMapPoints2):
+            if not pMP or vbAlreadyMatched2[i2] or pMP.is_bad():
+                continue
+
+            p3Dw = pMP.get_world_pos()
+            p3Dc2 = R2w @ p3Dw + t2w
+            p3Dc1 = sR12 @ p3Dc2 + t12
+
+            if p3Dc1[2] < 0.0:
+                continue
+
+            invz = 1.0 / p3Dc1[2]
+            x, y = p3Dc1[0] * invz, p3Dc1[1] * invz
+            u, v = fx * x + cx, fy * y + cy
+
+            if not pKF1.is_in_image(u, v):
+                continue
+
+            maxDistance = pMP.get_max_distance_invariance()
+            minDistance = pMP.get_min_distance_invariance()
+            dist3D = np.linalg.norm(p3Dc1)
+
+            if not (minDistance <= dist3D <= maxDistance):
+                continue
+
+            nPredictedLevel = pMP.predict_scale(dist3D, pKF1)
+            radius = th * pKF1.mvScaleFactors[nPredictedLevel]
+
+            vIndices = pKF1.get_features_in_area(u, v, radius)
+
+            if not vIndices:
+                continue
+
+            dMP = pMP.get_descriptor()
+            bestDist, bestIdx = np.inf, -1
+            for idx in vIndices:
+                kp = pKF1.mvKeysUn[idx]
+                if not (nPredictedLevel - 1 <= kp.octave <= nPredictedLevel):
+                    continue
+
+                dKF = pKF1.mDescriptors[idx]
+                dist = self.descriptor_distance(dMP, dKF)
+
+                if dist < bestDist:
+                    bestDist, bestIdx = dist, idx
+
+            if bestDist <= TH_HIGH:
+                vnMatch2[i2] = bestIdx
+
+        # Check agreement
+        nFound = 0
+        for i1, idx2 in enumerate(vnMatch1):
+            if idx2 >= 0:
+                idx1 = vnMatch2[idx2]
+                if idx1 == i1:
+                    vpMatches12[i1] = vpMapPoints2[idx2]
+                    nFound += 1
+
+        return nFound, vpMatches12
+
+    def search_by_projection_ckf_scw_mp(self, pKF, Scw, vpPoints, vpMatched, th):
+        """
+        Projects map points into the keyframe and finds matches.
+
+        Parameters:
+        - pKF: KeyFrame object with calibration parameters and features.
+        - Scw: 4x4 transformation matrix (Sim3).
+        - vpPoints: List of candidate MapPoints.
+        - vpMatched: List of matched MapPoints (to be updated).
+        - th: Search radius multiplier.
+
+        Returns:
+        - nmatches: Number of matches found.
+        """
+        # Get Calibration Parameters
+        fx, fy, cx, cy = pKF.fx, pKF.fy, pKF.cx, pKF.cy
+
+        # Decompose Scw
+        sRcw = Scw[:3, :3]
+        scw = np.linalg.norm(sRcw[0])
+        Rcw = sRcw / scw
+        tcw = Scw[:3, 3:4] / scw
+        Ow = -Rcw.T @ tcw
+
+        # Set of MapPoints already found in the KeyFrame
+        spAlreadyFound = set(vpMatched) - {None}
+
+        nmatches = 0
+
+        # For each Candidate MapPoint Project and Match
+        for iMP, pMP in enumerate(vpPoints):
+            # Discard bad MapPoints and already found
+            if pMP.is_bad() or pMP in spAlreadyFound:
+                continue
+
+            # Get 3D Coords
+            p3Dw = pMP.get_world_pos()
+
+            # Transform into Camera Coords
+            p3Dc = Rcw @ p3Dw +  tcw #np.expand_dims(tcw, axis=0).T
+            # Depth must be positive
+            if p3Dc[2][0] <= 0.0:
+                continue
+
+            # Project into Image
+            invz = 1.0 / p3Dc[2]
+            x, y = p3Dc[0] * invz, p3Dc[1] * invz
+            u, v = fx * x + cx, fy * y + cy
+
+            # Point must be inside the image
+            if not pKF.is_in_image(u, v):
+                continue
+
+            # Depth must be inside the scale invariance region of the point
+            maxDistance = pMP.get_max_distance_invariance()
+            minDistance = pMP.get_min_distance_invariance()
+            PO = p3Dw -  Ow #np.expand_dims(Ow, axis=0).T
+            dist = np.linalg.norm(PO)
+
+            if dist < minDistance or dist > maxDistance:
+                continue
+
+            # Viewing angle must be less than 60 degrees
+            Pn = pMP.get_normal()
+
+            if np.dot(PO.T, Pn) < 0.5 * dist:
+                continue
+
+            # Predicted scale level
+            nPredictedLevel = pMP.predict_scale(dist, pKF)
+
+            # Search in a radius
+            radius = th * pKF.mvScaleFactors[nPredictedLevel]
+            vIndices = pKF.get_features_in_area(u, v, radius)
+
+            if not vIndices:
+                continue
+
+            # Match to the most similar keypoint in the radius
+            dMP = pMP.get_descriptor()
+            bestDist, bestIdx = 256, -1
+
+            for idx in vIndices:
+                if vpMatched[idx] is not None:
+                    continue
+
+                kpLevel = pKF.mvKeysUn[idx].octave
+                if kpLevel < nPredictedLevel - 1 or kpLevel > nPredictedLevel:
+                    continue
+
+                dKF = pKF.mDescriptors[idx]
+                dist = self.descriptor_distance(dMP, dKF)
+
+                if dist < bestDist:
+                    bestDist = dist
+                    bestIdx = idx
+
+            if bestDist <= TH_LOW:
+                vpMatched[bestIdx] = pMP
+                nmatches += 1
+
+        return nmatches, vpMatched
+
+    def search_by_projection_f_kf_f(self, CurrentFrame, pKF, sAlreadyFound, th, ORBdist):
+        nmatches = 0
+
+        Rcw = CurrentFrame.mTcw[:3, :3]
+        tcw = CurrentFrame.mTcw[:3, 3:4]
+        Ow = -np.dot(Rcw.T, tcw)
+
+        # Rotation Histogram (to check rotation consistency)
+        rotHist = [[] for _ in range(HISTO_LENGTH)]
+        factor = 1.0 / HISTO_LENGTH
+
+        vpMPs = pKF.get_map_point_matches()
+
+        for i, pMP in enumerate(vpMPs):
+            if pMP and not pMP.is_bad() and pMP not in sAlreadyFound:
+                # Project
+                x3Dw = pMP.get_world_pos()
+                x3Dc = np.dot(Rcw, x3Dw) + tcw
+
+                xc = x3Dc[0]
+                yc = x3Dc[1]
+                invzc = 1.0 / x3Dc[2]
+
+                u = CurrentFrame.fx * xc * invzc + CurrentFrame.cx
+                v = CurrentFrame.fy * yc * invzc + CurrentFrame.cy
+
+                if u < CurrentFrame.mnMinX or u > CurrentFrame.mnMaxX or v < CurrentFrame.mnMinY or v > CurrentFrame.mnMaxY:
+                    continue
+
+                # Compute predicted scale level
+                PO = x3Dw - Ow
+                dist3D = np.linalg.norm(PO)
+
+                maxDistance = pMP.get_max_distance_invariance()
+                minDistance = pMP.get_min_distance_invariance()
+
+                if dist3D < minDistance or dist3D > maxDistance:
+                    continue
+
+                nPredictedLevel = pMP.predict_scale(dist3D, CurrentFrame)
+
+                # Search in a window
+                radius = th * CurrentFrame.mvScaleFactors[nPredictedLevel]
+                vIndices2 = CurrentFrame.get_features_in_area(u, v, radius, nPredictedLevel - 1, nPredictedLevel + 1)
+
+                if not vIndices2:
+                    continue
+
+                dMP = pMP.get_descriptor()
+
+                bestDist = 256
+                bestIdx2 = -1
+
+                for i2 in vIndices2:
+                    if CurrentFrame.mvpMapPoints[i2]:
+                        continue
+
+                    d = CurrentFrame.mDescriptors[i2]
+                    dist = self.descriptor_distance(dMP, d)
+
+                    if dist < bestDist:
+                        bestDist = dist
+                        bestIdx2 = i2
+
+                if bestDist <= ORBdist:
+                    CurrentFrame.mvpMapPoints[bestIdx2] = pMP
+                    nmatches += 1
+
+                    if self.mbCheckOrientation:
+                        rot = pKF.mvKeysUn[i].angle - CurrentFrame.mvKeysUn[bestIdx2].angle
+                        if rot < 0.0:
+                            rot += 360.0
+                        bin = round(rot * factor)
+                        if bin == HISTO_LENGTH:
+                            bin = 0
+                        assert 0 <= bin < HISTO_LENGTH
+                        rotHist[bin].append(bestIdx2)
+
+        # Enforce rotation consistency
+        if self.mbCheckOrientation:
+            ind1, ind2, ind3 = self.compute_three_maxima(rotHist, HISTO_LENGTH)
+
+            for i in range(HISTO_LENGTH):
+                if i != ind1 and i != ind2 and i != ind3:
+                    for idx in rotHist[i]:
+                        CurrentFrame.mvpMapPoints[idx] = None
+                        nmatches -= 1
+
+        return nmatches
 
 if __name__ == "__main__":
 

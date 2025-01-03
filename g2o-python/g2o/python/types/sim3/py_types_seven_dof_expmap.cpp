@@ -17,7 +17,12 @@ void declareTypesSevenDofExpmap(py::module& m) {
              std::shared_ptr<VertexSim3Expmap>>(m, "VertexSim3Expmap")
       .def(py::init<>())
       .def("cam_map1", &VertexSim3Expmap::cam_map1)
-      .def("cam_map2", &VertexSim3Expmap::cam_map2);
+      .def("cam_map2", &VertexSim3Expmap::cam_map2)
+      .def_readwrite("_principle_point1", &VertexSim3Expmap::_principle_point1)
+      .def_readwrite("_principle_point2", &VertexSim3Expmap::_principle_point2)
+      .def_readwrite("_focal_length1", &VertexSim3Expmap::_focal_length1)
+      .def_readwrite("_focal_length2", &VertexSim3Expmap::_focal_length2)
+      .def_readwrite("_fix_scale", &VertexSim3Expmap::_fix_scale);
 
   templatedBaseBinaryEdge<7, Sim3, VertexSim3Expmap, VertexSim3Expmap>(
       m, "_7_Sim3_VertexSim3Expmap_VertexSim3Expmap");
@@ -39,12 +44,14 @@ void declareTypesSevenDofExpmap(py::module& m) {
       .def(py::init<>())
       .def("compute_error", &EdgeSim3ProjectXYZ::computeError);
 
+
   py::class_<EdgeInverseSim3ProjectXYZ,
              BaseBinaryEdge<2, Vector2, VertexPointXYZ, VertexSim3Expmap>,
              std::shared_ptr<EdgeInverseSim3ProjectXYZ>>(
       m, "EdgeInverseSim3ProjectXYZ")
       .def(py::init<>())
       .def("compute_error", &EdgeInverseSim3ProjectXYZ::computeError);
+
 }
 
 }  // namespace g2o

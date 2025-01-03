@@ -35,7 +35,8 @@ void declareOptimizationAlgorithm(py::module& m) {
       m, "OptimizationAlgorithmLevenberg")
       .def(py::init([](PyBlockSolverBase& blockSolver) {
         return new OptimizationAlgorithmLevenberg(blockSolver.solver());
-      }));
+      }))
+      .def("set_user_lambda_init", &OptimizationAlgorithmLevenberg::setUserLambdaInit);
 
   py::class_<OptimizationAlgorithmDogleg, OptimizationAlgorithmWithHessian,
              std::shared_ptr<OptimizationAlgorithmDogleg>>(

@@ -38,13 +38,13 @@ def main():
 
     SLAM = System(args.pathToVocabulary, args.pathToSettings, sensor="STEREO", bUseViewer=True)
 
-    for i in range(4): #nImages
+    for i in range(2000): #nImages
         print("FFFFFFFFFFFFFFFFFFFrame = ", i)
         mleft = cv2.imread(leftImages[i], cv2.IMREAD_GRAYSCALE)
         mright = cv2.imread(rightImages[i], cv2.IMREAD_GRAYSCALE)
         timestamp = float(timeStamps[i])
 
-        Tcw = SLAM.track_stereo(mleft, mright, timestamp)
+        Tcw = SLAM.track_stereo(mleft, mright, timestamp, i)
         print(Tcw)
 
     SLAM.shutdown();

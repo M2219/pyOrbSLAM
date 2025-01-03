@@ -27,9 +27,9 @@ class Map:
             self.mspMapPoints.append(pMP)
 
     def erase_map_point(self, pMP):
-
         with self.mMutexMap:
-            self.mspMapPoints.remove(pMP)
+            if pMP in self.mspMapPoints:
+                self.mspMapPoints.remove(pMP)
 
     def erase_key_frame(self, pKF):
         with self.mMutexMap:

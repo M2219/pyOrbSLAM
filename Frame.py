@@ -74,9 +74,9 @@ class Frame:
         self.N = len(self.mvKeys)
 
         self.undistort_keypoints()
-        tt = time.time()
+        #tt = time.time()
         self.compute_stereo_matches()
-        print(f"------> time stereo matching : {time.time()-tt}")
+        #print(f"------> time stereo matching : {time.time()-tt}")
 
         self.mvpMapPoints = [None] * self.N
         self.mvbOutlier = [False] * self.N

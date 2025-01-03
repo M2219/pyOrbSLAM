@@ -75,6 +75,8 @@ class KeyFrame:
         self.mK = F.mK
         self.mvpMapPoints = F.mvpMapPoints
         self.mvbOutlier = F.mvbOutlier
+
+        self.mRelocScore = 0.0
         #print("self.mvpMapPoints", len(self.mvpMapPoints))
         #print("self.mvbOutlier", len(self.mvbOutlier))
         self.mpKeyFrameDB = pKFDB
@@ -258,8 +260,7 @@ class KeyFrame:
 
     def get_connected_key_frames(self):
         with self.mMutexConnections:
-            return set(self.mConnectedKeyFrameWeights.keys())
-
+            return OrderedSet(self.mConnectedKeyFrameWeights.keys())
 
     def get_vector_covisible_key_frames(self):
         with self.mMutexConnections:
@@ -306,7 +307,7 @@ class KeyFrame:
     def get_map_points(self):
         with self.mMutexFeatures:
             s = []
-            for pMP in mvpMapPoint:
+            for pMP in self.mvpMapPoints:
                 if not pMP:
                     continue
 

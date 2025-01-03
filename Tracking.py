@@ -6,12 +6,14 @@ import numpy as np
 import cv2
 
 from copy import deepcopy
+from ordered_set import OrderedSet
 
 from Frame import Frame
 from KeyFrame import KeyFrame
 from ORBMatcher import ORBMatcher
 from Optimizer import Optimizer
 from MapPoint import MapPoint
+from PnPsolver import PnPsolver
 
 sys.path.append("./pyORBExtractor/lib/")
 from pyORBExtractor import ORBextractor
@@ -84,13 +86,14 @@ class Tracking:
         return self.mpSystem.mpLocalMapper
 
     @property
+    def mpLoopCloser(self):
+        return self.mpSystem.mpLoopCloser
+
+    @property
     def mpViewer(self):
         return self.mpSystem.mpViewer
 
-    def grab_image_stereo(self, mImGray, imGrayRight, timestamp):
-        ##############
-        # just for the first image should be transfer to stereo and done for the first loop than frame_args passes to the
-        ##############
+    def grab_image_stereo(self, mImGray, imGrayRight, timestamp, i):
 
         FRAME_GRID_ROWS = 48
         FRAME_GRID_COLS = 64
@@ -103,26 +106,15 @@ class Tracking:
 
         mfGridElementWidthInv = float(FRAME_GRID_COLS) / (mnMaxX - mnMinX)
         mfGridElementHeightInv = float(FRAME_GRID_ROWS) / (mnMaxY - mnMinY)
-        ########################
 
         self.frame_args = [self.fx, self.fy, self.cx, self.cy, self.invfx, self.invfy,
           mfGridElementWidthInv, mfGridElementHeightInv, mnMinX, mnMaxX, mnMinY, mnMaxY, FRAME_GRID_ROWS, FRAME_GRID_COLS]
 
-        tt = time.time()
         self.mCurrentFrame = Frame(self.mImGray, self.imGrayRight, timestamp, self.mpORBExtractorLeft, self.mpORBExtractorRight, self.mpORBVocabulary,
                         self.mK, self.mDistCoef, self.mbf, self.mThDepth, self.frame_args)
 
-        print(f"------> time frame : {time.time()-tt}")
+        self.track(i)
 
-        # Run tracking
-        tt = time.time()
-        self.track()
-        print(f"------> time track : {time.time()-tt}")
-        #print("--> ", len(self.mpMap.get_all_map_points()))
-        #print("tlen mvpMapPoints", len(self.mLastFrame.mvpMapPoints))
-        #print("tlen mvbOutlier", len(self.mLastFrame.mvbOutlier))
-
-        # Return the pose of the current frame
         return self.mCurrentFrame.mTcw.copy()
 
     def compute_image_bounds(self, imLeft, mK, mDistCoef):
@@ -154,7 +146,7 @@ class Tracking:
 
         return mnMinX, mnMaxX, mnMinY, mnMaxY
 
-    def track(self):
+    def track(self, imm):
         """
         Main tracking function
         """
@@ -190,7 +182,6 @@ class Tracking:
                             if not bOK:
                                 print("-------------------------------------------------> 3")
                                 bOK = self.track_reference_key_frame()
-
                     else:
                         bOK = self.relocalization()
                 else:
@@ -200,7 +191,7 @@ class Tracking:
                         bOK = self.relocalization()
                     else:
                         if not self.mbVO:
-                            if self.mVelocity:
+                            if self.mVelocity is not None:
                                 bOK = self.track_with_motion_model()
                             else:
                                 bOK = self.track_reference_key_frame()
@@ -209,7 +200,7 @@ class Tracking:
                             bOKMM, bOKReloc = False, False
                             vpMPsMM, vbOutMM, TcwMM = [], [], None
 
-                            if self.mVelocity:
+                            if self.mVelocity is not None:
                                 print("empty list in dictionary !")
                                 bOKMM = self.track_with_motion_model()
                                 vpMPsMM = self.mCurrentFrame.mvpMapPoints
@@ -247,7 +238,9 @@ class Tracking:
 
 
                 # Update tracking state
-                self.mState = "OK" if bOK else "LOST"
+                #self.mState = "OK" if bOK else "LOST"
+                #if imm > 10:
+                #    self.mState = "LOST"
 
                 # Update drawer
                 self.mpFrameDrawer.update(self)
@@ -822,8 +815,128 @@ class Tracking:
             else:
                 nPoints += 1
 
-            if depth > mThDepth and nPoints > 100:
+            if depth > self.mThDepth and nPoints > 100:
                 break
+
+    def relocalization(self):
+        # Compute Bag of Words Vector
+        self.mCurrentFrame.compute_BoW()
+        print("------------------------------------------------------------  relocalization")
+        # Relocalization is performed when tracking is lost
+        # Track Lost: Query KeyFrame Database for keyframe candidates for relocalisation
+        vpCandidateKFs = self.mpKeyFrameDB.detect_relocalization_candidates(self.mCurrentFrame)
+        print("vpCandidateKFs", len(vpCandidateKFs))
+        if not vpCandidateKFs:
+            return False
+
+        nKFs = len(vpCandidateKFs)
+
+        # Perform ORB matching with each candidate
+        # If enough matches are found, setup a PnP solver
+        matcher = ORBMatcher(0.75, True)
+
+        vpPnPsolvers = [None] * nKFs
+        vvpMapPointMatches = [None] * nKFs
+        vbDiscarded = [False] * nKFs
+
+        nCandidates = 0
+
+        for i in range(nKFs):
+            pKF = vpCandidateKFs[i]
+            if pKF.is_bad():
+                vbDiscarded[i] = True
+            else:
+                nmatches, vvpMapPointMatches[i] = matcher.search_by_BoW_kf_f(pKF, self.mCurrentFrame)
+                if nmatches < 15:
+                    vbDiscarded[i] = True
+                    continue
+                else:
+                    pSolver = PnPsolver(self.mCurrentFrame, vvpMapPointMatches[i])
+                    pSolver.set_ransac_parameters(0.99, 10, 300, 4, 0.4, 5.991)
+                    vpPnPsolvers[i] = pSolver
+                    nCandidates += 1
+
+        # Perform P4P RANSAC iterations
+        # Until a camera pose supported by enough inliers is found
+        bMatch = False
+        matcher2 = ORBMatcher(0.9, True)
+
+        while nCandidates > 0 and not bMatch:
+            for i in range(nKFs):
+                if vbDiscarded[i]:
+                    continue
+
+                # Perform 5 RANSAC iterations
+                vbInliers = []
+                nInliers = 0
+                bNoMore = False
+
+                pSolver = vpPnPsolvers[i]
+                Tcw, bNoMore, vbInliers, nInlier = pSolver.iterate(5)
+                # If RANSAC reaches max iterations, discard keyframe
+                if bNoMore:
+                    vbDiscarded[i] = True
+                    nCandidates -= 1
+
+                # If a camera pose is computed, optimize
+                if Tcw is not None:
+                    self.mCurrentFrame.mTcw = Tcw
+
+                    sFound = OrderedSet()
+
+                    np = len(vbInliers)
+
+                    for j in range(np):
+                        if vbInliers[j]:
+                            self.mCurrentFrame.mvpMapPoints[j] = vvpMapPointMatches[i][j]
+                            sFound.add(vvpMapPointMatches[i][j])
+                        else:
+                            self.mCurrentFrame.mvpMapPoints[j] = None
+                    nGood = self.optimizer.pose_optimization(self.mCurrentFrame)
+                    if nGood < 10:
+                        continue
+
+                    for io in range(self.mCurrentFrame.N):
+                        if self.mCurrentFrame.mvbOutlier[io]:
+                            self.mCurrentFrame.mvpMapPoints[io] = None
+
+                    # If few inliers, search by projection in a coarse window and optimize again
+                    if nGood < 50:
+                        nadditional = matcher2.search_by_projection_f_kf_f(
+                            self.mCurrentFrame, vpCandidateKFs[i], sFound, 10, 100
+                        )
+
+                        if nadditional + nGood >= 50:
+                            nGood = self.optimizer.pose_optimization(self.mCurrentFrame)
+
+                            # If many inliers but still not enough, search by projection again in a narrower window
+                            if 30 < nGood < 50:
+                                sFound.clear()
+                                for ip in range(self.mCurrentFrame.N):
+                                    if self.mCurrentFrame.mvpMapPoints[ip]:
+                                        sFound.add(self.mCurrentFrame.mvpMapPoints[ip])
+                                nadditional = matcher2.search_by_projection_f_kf_f(
+                                    self.mCurrentFrame, vpCandidateKFs[i], sFound, 3, 64
+                                )
+
+                                # Final optimization
+                                if nGood + nadditional >= 50:
+                                    nGood = self.optimizer.pose_optimization(self.mCurrentFrame)
+
+                                    for io in range(self.mCurrentFrame.N):
+                                        if self.mCurrentFrame.mvbOutlier[io]:
+                                            self.mCurrentFrame.mvpMapPoints[io] = None
+
+                    # If the pose is supported by enough inliers, stop RANSACs and continue
+                    if nGood >= 50:
+                        bMatch = True
+                        break
+        if not bMatch:
+            return False
+        else:
+            self.mnLastRelocFrameId = self.mCurrentFrame.mnId
+            return True
+
 
     def inform_only_tracking(self, flag):
         self.mbOnlyTracking = flag
@@ -869,6 +982,8 @@ class Tracking:
 
         if self.mpViewer:
             self.mpViewer.release()
+
+
 
 if __name__ == "__main__":
 

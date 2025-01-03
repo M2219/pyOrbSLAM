@@ -13,6 +13,7 @@ from FrameDrawer import FrameDrawer
 from MapDrawer import MapDrawer
 from Tracking import Tracking
 from LocalMapping import LocalMapping
+from LoopClosing import LoopClosing
 from Viewer import Viewer
 
 class System:
@@ -48,20 +49,21 @@ class System:
         self.mpMap = Map()
 
         self.mpFrameDrawer = FrameDrawer(self.mpMap)
+
         self.mpMapDrawer = MapDrawer(self.mpMap, fsSettings)
 
-        self.mpLocalMapper = LocalMapping(self.mpMap)
 
         self.mpTracker = Tracking(self, self.mpVocabulary, self.mpFrameDrawer, self.mpMapDrawer,
                                   self.mpMap, self.mpKeyFrameDatabase, fsSettings, self.mSensor)
 
 
+        self.mpLocalMapper = LocalMapping(self, self.mpMap)
         self.mptLocalMapping_thread = threading.Thread(target=self.mpLocalMapper.run)
         self.mptLocalMapping_thread.start()
 
-        #self.mpLoopCloser = LoopClosing(self.mpMap, self.mpKeyFrameDatabase, self.mpVocabulary, self.mSensor, ss)
-        #self.mptLoopClosing_thread = threading.Thread(target=self.mpLoopCloser.run)
-        #print(self.bUseViewer)
+        self.mpLoopCloser = LoopClosing(self, self.mpMap, self.mpKeyFrameDatabase, self.mpVocabulary)
+        self.mptLoopClosing_thread = threading.Thread(target=self.mpLoopCloser.run)
+        self.mptLoopClosing_thread.start()
 
         if self.bUseViewer:
             self.mpViewer = Viewer(self, self.mpFrameDrawer, self.mpMapDrawer, self.mpTracker, fsSettings)
@@ -87,7 +89,7 @@ class System:
         with self.mMutexReset:
             self.mbReset = True
 
-    def track_stereo(self, mleft, mright, timestamp):
+    def track_stereo(self, mleft, mright, timestamp, i):
 
         with self.mMutexMode:
             if self.mbActivateLocalizationMode:
@@ -110,7 +112,7 @@ class System:
                 self.mpTracker.reset()
                 self.mbReset = False
 
-        Tcw = self.mpTracker.grab_image_stereo(mleft, mright, timestamp)
+        Tcw = self.mpTracker.grab_image_stereo(mleft, mright, timestamp, i)
 
         with self.mMutexState:
             self.mTrackingState = self.mpTracker.mState

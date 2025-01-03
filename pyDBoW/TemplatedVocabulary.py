@@ -105,7 +105,7 @@ class TemplatedVocabulary:
         :param bow_vector2: Second BoW vector (dictionary with word IDs as keys and weights as values).
         :return: Score (similarity or distance) between the two vectors.
         """
-        return self.scoring_object(bow_vector1.word_weights, bow_vector2.word_weights)
+        return self.scoring_object(bow_vector1, bow_vector2)
 
     def transform(self, features, levels_up=4):
         """

@@ -122,8 +122,8 @@ class Viewer:
 
             # Show current frame (dummy implementation)
             img = self.mpFrameDrawer.draw_frame()
-            #cv2.imshow("pyOrbSLAM: Current Frame", img)
-            #cv2.waitKey(int(self.mT))
+            cv2.imshow("pyOrbSLAM: Current Frame", img)
+            cv2.waitKey(int(self.mT))
 
             if menuReset:
                 menuShowGraph = True

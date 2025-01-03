@@ -10,7 +10,7 @@ class LocalMapping:
 
     mMutexReset = threading.Lock()
 
-    def __init__(self, pMap):
+    def __init__(self, pSys, pMap):
 
         self.mMutexNewKFs = threading.Lock()
         self.mMutexAccept = threading.Lock()
@@ -26,11 +26,17 @@ class LocalMapping:
         self.mbStopRequested = False
         self.mbAcceptKeyFrames = True
 
+        self.mpSystem = pSys
         self.mpMap = pMap
+
         self.mlNewKeyFrames = []
 
         self.mlpRecentAddedMapPoints = []
         self.optimizer = Optimizer()
+
+    @property
+    def mpLoopCloser(self):
+        return self.mpSystem.mpLoopCloser
 
     def keyframes_in_queue(self):
         with self.mMutexNewKFs:
@@ -49,7 +55,6 @@ class LocalMapping:
             # Check if there are keyframes in the queue
             if self.check_new_key_frames():
 
-                print(self.mlNewKeyFrames)
                 # Process new keyframe
 
                 self.process_new_key_frame()
@@ -73,7 +78,8 @@ class LocalMapping:
 
                     # Cull redundant local keyframes
                     self.key_frame_culling()
-                #self.mpLoopCloser.insert_key_frame(self.mpCurrentKeyFrame) not yet
+
+                self.mpLoopCloser.insert_key_frame(self.mpCurrentKeyFrame)
 
             elif self.stop():
                 # Safe area to stop
@@ -513,6 +519,17 @@ class LocalMapping:
         """
         with self.mMutexStop:
             return self.mbStopRequested
+
+    def release(self):
+        with self.mMutexStop:
+            with self.mMutexFinish:
+                if self.mbFinished:
+                    return
+                self.mbStopped = False
+                self.mbStopRequested = False
+                for keyframe in self.mlNewKeyFrames:
+                    del keyframe
+                self.mlNewKeyFrames.clear()
 
     def stop(self):
         """

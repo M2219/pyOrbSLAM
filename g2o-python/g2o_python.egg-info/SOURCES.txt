@@ -1,5 +1,3 @@
-.gitignore
-.gitmodules
 LICENSE
 README.md
 pyproject.toml
@@ -337,14 +335,11 @@ _skbuild/linux-x86_64-3.10/cmake-install/share/pkgconfig/pybind11.pc
 g2o/.clang-format
 g2o/.clang-tidy
 g2o/.codacy.yaml
-g2o/.gitignore
 g2o/CMakeLists.txt
 g2o/README.md
 g2o/__init__.py
 g2o/codecov.yml
 g2o/config.h.in
-g2o/.github/workflows/ci.yml
-g2o/.github/workflows/windows.yml
 g2o/benchmarks/CMakeLists.txt
 g2o/benchmarks/jacobian_timing_tests.cpp
 g2o/cmake_modules/CheckIfUnderscorePrefixedBesselFunctionsExist.cmake
@@ -355,7 +350,6 @@ g2o/cmake_modules/FindG2O.cmake
 g2o/cmake_modules/FindMETIS.cmake
 g2o/cmake_modules/FindQGLViewer.cmake
 g2o/cmake_modules/FindSuiteSparse.cmake
-g2o/doc/.gitignore
 g2o/doc/Makefile
 g2o/doc/g2o.tex
 g2o/doc/license-bsd.txt
@@ -369,7 +363,6 @@ g2o/doc/pics/classes.svg
 g2o/doc/pics/hgraph.fig
 g2o/doc/pics/slam.fig
 g2o/doc/pics/viewer.png
-g2o/g2o/.gitignore
 g2o/g2o/CMakeLists.txt
 g2o/g2o/what_is_in_these_directories.txt
 g2o/g2o/EXTERNAL/CMakeLists.txt
