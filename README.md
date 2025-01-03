@@ -34,7 +34,6 @@ Download and extract [ORBvoc.txt](https://github.com/raulmur/ORB_SLAM2/tree/mast
 
 ```
 pip install opencv-python
-pip install ordereddict
 
 ```
 Install ```pypangolin``` from [Pangolin](https://github.com/stevenlovegrove/Pangolin/tree/master)
